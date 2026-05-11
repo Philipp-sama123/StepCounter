@@ -1,23 +1,26 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
-import { HistoryBars } from '../src/components/HistoryBars';
-import { COLORS } from '../src/constants';
-import { readLastSevenDays, StepHistoryEntry } from '../src/storage/stepStorage';
+import { StepTrendChart } from '../src/components/StepTrendChart';
+import { COLORS, DEFAULT_GOAL } from '../src/constants';
+import { readGoal, readLastSevenDays, StepHistoryEntry } from '../src/storage/stepStorage';
 
 export default function HistoryScreen() {
   const [history, setHistory] = useState<StepHistoryEntry[]>([]);
+  const [goal, setGoal] = useState(DEFAULT_GOAL);
 
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
 
       const loadHistory = async (): Promise<void> => {
-        const entries = await readLastSevenDays();
+        const [entries, storedGoal] = await Promise.all([readLastSevenDays(), readGoal()]);
         if (isActive) {
           setHistory(entries);
+          setGoal(storedGoal);
         }
       };
 
@@ -31,14 +34,18 @@ export default function HistoryScreen() {
 
   const weeklyTotal = history.reduce((total, entry) => total + entry.steps, 0);
   const average = history.length > 0 ? Math.round(weeklyTotal / history.length) : 0;
+  const bestDay = history.reduce<StepHistoryEntry | null>(
+    (bestEntry, entry) => (bestEntry === null || entry.steps > bestEntry.steps ? entry : bestEntry),
+    null,
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Last 7 Days</Text>
         <View style={styles.chartSurface}>
-          <HistoryBars history={history} />
+          <StepTrendChart goal={goal} history={history} />
         </View>
         <View style={styles.summary}>
           <View style={styles.summaryItem}>
@@ -51,7 +58,13 @@ export default function HistoryScreen() {
             <Text style={styles.summaryValue}>{average.toLocaleString()}</Text>
           </View>
         </View>
-      </View>
+        <View style={styles.insight}>
+          <Text style={styles.insightLabel}>Best day</Text>
+          <Text style={styles.insightValue}>
+            {bestDay === null ? 'No steps yet' : `${bestDay.dayName} · ${bestDay.steps.toLocaleString()} steps`}
+          </Text>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -62,9 +75,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   container: {
-    flex: 1,
     paddingHorizontal: 24,
     paddingTop: 18,
+    paddingBottom: 28,
     gap: 22,
   },
   title: {
@@ -74,8 +87,8 @@ const styles = StyleSheet.create({
   },
   chartSurface: {
     borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -108,5 +121,23 @@ const styles = StyleSheet.create({
     height: 44,
     marginHorizontal: 16,
     backgroundColor: COLORS.border,
+  },
+  insight: {
+    borderRadius: 8,
+    padding: 18,
+    backgroundColor: COLORS.primarySoft,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    gap: 6,
+  },
+  insightLabel: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  insightValue: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: '900',
   },
 });

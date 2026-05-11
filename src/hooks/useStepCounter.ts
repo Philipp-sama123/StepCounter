@@ -10,7 +10,8 @@ import {
   saveStepCounterState,
   saveStepsForDate,
 } from '../storage/stepStorage';
-import { readTodayStepsFromHealthConnect } from '../health/healthConnect';
+import { readTodayStepsFromSystemHealth } from '../health/stepsProvider';
+import { StepDataSource } from '../health/types';
 
 export type WalkingStatus = 'walking' | 'stopped' | 'unknown';
 
@@ -19,6 +20,7 @@ export type UseStepCounterResult = {
   isAvailable: boolean;
   status: WalkingStatus;
   isSystemTotalAvailable: boolean;
+  source: StepDataSource;
 };
 
 const getStartOfToday = (): Date => {
@@ -30,12 +32,13 @@ const getStartOfToday = (): Date => {
 export const useStepCounter = (): UseStepCounterResult => {
   const [todaySteps, setTodaySteps] = useState(0);
   const [isAvailable, setIsAvailable] = useState(false);
+  const [source, setSource] = useState<StepDataSource>('unavailable');
   const [status, setStatus] = useState<WalkingStatus>('unknown');
 
   const baselineRef = useRef(0);
   const lastDateRef = useRef<string | null>(null);
   const todayStepsRef = useRef(0);
-  const isHealthConnectActiveRef = useRef(false);
+  const isSystemHealthActiveRef = useRef(false);
   const previousSensorStepsRef = useRef<number | null>(null);
   const canQueryRangesRef = useRef(Platform.OS !== 'android');
   const stoppedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,16 +74,18 @@ export const useStepCounter = (): UseStepCounterResult => {
     }
   };
 
-  const syncHealthConnectSteps = async (): Promise<boolean> => {
-    const result = await readTodayStepsFromHealthConnect();
+  const syncSystemHealthSteps = async (): Promise<boolean> => {
+    const result = await readTodayStepsFromSystemHealth();
 
     if (!result.available) {
-      isHealthConnectActiveRef.current = false;
+      isSystemHealthActiveRef.current = false;
+      setSource((currentSource) => (currentSource === 'unavailable' ? 'unavailable' : currentSource));
       return false;
     }
 
     const today = getTodayString();
-    isHealthConnectActiveRef.current = true;
+    isSystemHealthActiveRef.current = true;
+    setSource(result.source);
     updateTodaySteps(result.steps);
     await saveStepsForDate(today, result.steps);
     setStatus('stopped');
@@ -90,7 +95,7 @@ export const useStepCounter = (): UseStepCounterResult => {
   const handleStepUpdate = async (currentSteps: number): Promise<void> => {
     const today = getTodayString();
 
-    if (isHealthConnectActiveRef.current) {
+    if (isSystemHealthActiveRef.current) {
       if (currentSteps > (previousSensorStepsRef.current ?? 0)) {
         setStatus('walking');
         scheduleStoppedStatus();
@@ -151,7 +156,7 @@ export const useStepCounter = (): UseStepCounterResult => {
           return;
         }
 
-        const hasHealthConnectSteps = await syncHealthConnectSteps();
+        const hasSystemHealthSteps = await syncSystemHealthSteps();
 
         const storedState = await readStepCounterState();
         baselineRef.current = storedState.baseline;
@@ -165,12 +170,14 @@ export const useStepCounter = (): UseStepCounterResult => {
           await saveStepCounterState(0, today);
         }
 
-        if (!hasHealthConnectSteps) {
+        if (!hasSystemHealthSteps) {
           const initialSteps = await readTodayStepsFromRange();
           if (isMounted && initialSteps !== null) {
+            setSource(Platform.OS === 'ios' ? 'apple-health' : 'live-sensor');
             updateTodaySteps(initialSteps);
             await saveStepsForDate(today, initialSteps);
           } else if (isMounted) {
+            setSource('live-sensor');
             updateTodaySteps(await readStepsForDate(today));
           }
         }
@@ -191,12 +198,12 @@ export const useStepCounter = (): UseStepCounterResult => {
 
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        void syncHealthConnectSteps();
+        void syncSystemHealthSteps();
       }
     });
     const healthConnectRefreshInterval = setInterval(() => {
-      if (isHealthConnectActiveRef.current) {
-        void syncHealthConnectSteps();
+      if (isSystemHealthActiveRef.current) {
+        void syncSystemHealthSteps();
       }
     }, 60000);
 
@@ -216,6 +223,7 @@ export const useStepCounter = (): UseStepCounterResult => {
     todaySteps,
     isAvailable,
     status,
-    isSystemTotalAvailable: canQueryRangesRef.current || isHealthConnectActiveRef.current,
+    isSystemTotalAvailable: canQueryRangesRef.current || isSystemHealthActiveRef.current,
+    source,
   };
 };

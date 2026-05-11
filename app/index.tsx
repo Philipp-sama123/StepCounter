@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { GoalModal } from '../src/components/GoalModal';
@@ -11,7 +12,7 @@ import { useStepCounter } from '../src/hooks/useStepCounter';
 import { readGoal, saveGoal } from '../src/storage/stepStorage';
 
 export default function HomeScreen() {
-  const { todaySteps, isAvailable, status, isSystemTotalAvailable } = useStepCounter();
+  const { todaySteps, isAvailable, status, isSystemTotalAvailable, source } = useStepCounter();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
 
@@ -61,8 +62,10 @@ export default function HomeScreen() {
 
           {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Not supported on this device</Text>}
 
-          {isAvailable && !isSystemTotalAvailable ? (
-            <Text style={styles.liveNote}>Android live tracking counts new steps while this app is open.</Text>
+          {isAvailable ? (
+            <Text style={styles.liveNote}>
+              {isSystemTotalAvailable ? `Connected to ${getSourceLabel(source)}` : 'Live tracking counts new steps while this app is open.'}
+            </Text>
           ) : null}
 
           {hasReachedGoal ? (
@@ -176,3 +179,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 });
+
+const getSourceLabel = (source: string): string => {
+  if (source === 'apple-health') {
+    return 'Apple Health';
+  }
+
+  if (source === 'health-connect') {
+    return 'Health Connect';
+  }
+
+  return 'live sensor';
+};

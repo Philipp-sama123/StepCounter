@@ -16,8 +16,12 @@ import { StepDataSource } from '../health/types';
 export type WalkingStatus = 'walking' | 'stopped' | 'unknown';
 
 export type UseStepCounterResult = {
+  debugMessage: string;
   todaySteps: number;
   isAvailable: boolean;
+  isRefreshing: boolean;
+  lastSyncedAt: string | null;
+  refreshSteps: () => Promise<void>;
   status: WalkingStatus;
   isSystemTotalAvailable: boolean;
   source: StepDataSource;
@@ -31,7 +35,10 @@ const getStartOfToday = (): Date => {
 
 export const useStepCounter = (): UseStepCounterResult => {
   const [todaySteps, setTodaySteps] = useState(0);
+  const [debugMessage, setDebugMessage] = useState('Loading local step data...');
   const [isAvailable, setIsAvailable] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [source, setSource] = useState<StepDataSource>('unavailable');
   const [status, setStatus] = useState<WalkingStatus>('unknown');
 
@@ -75,20 +82,27 @@ export const useStepCounter = (): UseStepCounterResult => {
   };
 
   const syncSystemHealthSteps = async (): Promise<boolean> => {
+    setIsRefreshing(true);
     const result = await readTodayStepsFromSystemHealth();
 
     if (!result.available) {
       isSystemHealthActiveRef.current = false;
       setSource((currentSource) => (currentSource === 'unavailable' ? 'unavailable' : currentSource));
+      setDebugMessage(result.reason);
+      setIsRefreshing(false);
       return false;
     }
 
     const today = getTodayString();
+    const syncedAt = new Date().toISOString();
     isSystemHealthActiveRef.current = true;
     setSource(result.source);
     updateTodaySteps(result.steps);
     await saveStepsForDate(today, result.steps);
     setStatus('stopped');
+    setLastSyncedAt(syncedAt);
+    setDebugMessage(`Loaded ${result.steps.toLocaleString()} steps from ${getSourceLabel(result.source)}.`);
+    setIsRefreshing(false);
     return true;
   };
 
@@ -176,9 +190,11 @@ export const useStepCounter = (): UseStepCounterResult => {
             setSource(Platform.OS === 'ios' ? 'apple-health' : 'live-sensor');
             updateTodaySteps(initialSteps);
             await saveStepsForDate(today, initialSteps);
+            setDebugMessage(`Loaded ${initialSteps.toLocaleString()} steps from device sensors.`);
           } else if (isMounted) {
             setSource('live-sensor');
             updateTodaySteps(await readStepsForDate(today));
+            setDebugMessage('Using local step data. Tap Refresh to load Google Fit via Health Connect.');
           }
         }
 
@@ -190,6 +206,7 @@ export const useStepCounter = (): UseStepCounterResult => {
         if (isMounted) {
           setIsAvailable(false);
           setStatus('unknown');
+          setDebugMessage('Step tracking is unavailable on this device.');
         }
       }
     };
@@ -220,10 +237,38 @@ export const useStepCounter = (): UseStepCounterResult => {
   }, []);
 
   return {
+    debugMessage,
     todaySteps,
     isAvailable,
+    isRefreshing,
+    lastSyncedAt,
+    refreshSteps: async () => {
+      try {
+        await syncSystemHealthSteps();
+      } catch (error) {
+        console.warn('Manual step refresh failed.', error);
+        setDebugMessage('Step refresh failed. Check Health Connect permissions and try again.');
+        setIsRefreshing(false);
+      }
+    },
     status,
     isSystemTotalAvailable: canQueryRangesRef.current || isSystemHealthActiveRef.current,
     source,
   };
+};
+
+const getSourceLabel = (source: StepDataSource): string => {
+  if (source === 'apple-health') {
+    return 'Apple Health';
+  }
+
+  if (source === 'health-connect') {
+    return 'Health Connect';
+  }
+
+  if (source === 'live-sensor') {
+    return 'device sensors';
+  }
+
+  return 'health data';
 };

@@ -1,8 +1,8 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
 
 import { StepTrendChart } from '../src/components/StepTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
@@ -38,36 +38,74 @@ export default function HistoryScreen() {
     (bestEntry, entry) => (bestEntry === null || entry.steps > bestEntry.steps ? entry : bestEntry),
     null,
   );
+  const goalDays = history.filter((entry) => entry.steps >= goal).length;
+  const activeDays = history.filter((entry) => entry.steps > 0).length;
+  const consistency = history.length > 0 ? Math.round((activeDays / history.length) * 100) : 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Last 7 Days</Text>
+        <View style={styles.header}>
+          <Text style={styles.title}>Statistics</Text>
+          <Text style={styles.subtitle}>Last 7 days</Text>
+        </View>
+
         <View style={styles.chartSurface}>
           <StepTrendChart goal={goal} history={history} />
         </View>
-        <View style={styles.summary}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Weekly total</Text>
-            <Text style={styles.summaryValue}>{weeklyTotal.toLocaleString()}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Daily average</Text>
-            <Text style={styles.summaryValue}>{average.toLocaleString()}</Text>
-          </View>
+
+        <View style={styles.metricGrid}>
+          <MetricCard label="Weekly total" value={weeklyTotal.toLocaleString()} />
+          <MetricCard label="Daily average" value={average.toLocaleString()} />
+          <MetricCard label="Goal days" value={`${goalDays}/${history.length}`} />
+          <MetricCard label="Consistency" value={`${consistency}%`} />
         </View>
+
         <View style={styles.insight}>
           <Text style={styles.insightLabel}>Best day</Text>
           <Text style={styles.insightValue}>
-            {bestDay === null ? 'No steps yet' : `${bestDay.dayName} · ${bestDay.steps.toLocaleString()} steps`}
+            {bestDay === null || bestDay.steps === 0 ? 'No steps yet' : `${bestDay.dayName} · ${bestDay.steps.toLocaleString()} steps`}
           </Text>
+        </View>
+
+        <View style={styles.list}>
+          {history.map((entry) => {
+            const progress = Math.min(1, entry.steps / goal);
+            const reachedGoal = entry.steps >= goal;
+
+            return (
+              <View key={entry.date} style={styles.dayRow}>
+                <View style={styles.dayCopy}>
+                  <Text style={styles.dayName}>{entry.dayName}</Text>
+                  <Text style={styles.dayDate}>{entry.date}</Text>
+                </View>
+                <View style={styles.dayProgress}>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, reachedGoal ? styles.successFill : null, { width: `${progress * 100}%` }]} />
+                  </View>
+                  <Text style={styles.daySteps}>{entry.steps.toLocaleString()}</Text>
+                </View>
+              </View>
+            );
+          })}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+type MetricCardProps = {
+  label: string;
+  value: string;
+};
+
+const MetricCard = ({ label, value }: MetricCardProps) => (
+  <View style={styles.metricCard}>
+    <Text style={styles.metricLabel}>{label}</Text>
+    <Text style={styles.metricValue}>{value}</Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -78,12 +116,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 18,
     paddingBottom: 28,
-    gap: 22,
+    gap: 18,
+  },
+  header: {
+    gap: 4,
   },
   title: {
     color: COLORS.text,
     fontSize: 30,
     fontWeight: '900',
+  },
+  subtitle: {
+    color: COLORS.mutedText,
+    fontSize: 14,
+    fontWeight: '800',
   },
   chartSurface: {
     borderRadius: 8,
@@ -93,34 +139,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  summary: {
-    borderRadius: 8,
-    padding: 18,
+  metricGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  metricCard: {
+    width: '48%',
+    minHeight: 86,
+    borderRadius: 8,
+    padding: 14,
+    justifyContent: 'space-between',
     backgroundColor: COLORS.surface,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  summaryItem: {
-    flex: 1,
-    gap: 6,
-  },
-  summaryLabel: {
+  metricLabel: {
     color: COLORS.mutedText,
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
   },
-  summaryValue: {
+  metricValue: {
     color: COLORS.text,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '900',
-  },
-  divider: {
-    width: 1,
-    height: 44,
-    marginHorizontal: 16,
-    backgroundColor: COLORS.border,
   },
   insight: {
     borderRadius: 8,
@@ -138,6 +180,61 @@ const styles = StyleSheet.create({
   insightValue: {
     color: COLORS.text,
     fontSize: 18,
+    fontWeight: '900',
+  },
+  list: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  dayRow: {
+    minHeight: 72,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  dayCopy: {
+    width: 74,
+    gap: 3,
+  },
+  dayName: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  dayDate: {
+    color: COLORS.mutedText,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  dayProgress: {
+    flex: 1,
+    gap: 7,
+  },
+  progressTrack: {
+    height: 9,
+    borderRadius: 5,
+    overflow: 'hidden',
+    backgroundColor: COLORS.barSoft,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 5,
+    backgroundColor: COLORS.bar,
+  },
+  successFill: {
+    backgroundColor: COLORS.success,
+  },
+  daySteps: {
+    color: COLORS.text,
+    textAlign: 'right',
+    fontSize: 13,
     fontWeight: '900',
   },
 });

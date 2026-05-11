@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 
 import { STATUS_STOPPED_DELAY_MS } from '../constants';
 import {
   getTodayString,
   readStepCounterState,
+  readStepsForDate,
   saveStepCounterState,
   saveStepsForDate,
 } from '../storage/stepStorage';
+import { readTodayStepsFromHealthConnect } from '../health/healthConnect';
 
 export type WalkingStatus = 'walking' | 'stopped' | 'unknown';
 
@@ -15,6 +18,7 @@ export type UseStepCounterResult = {
   todaySteps: number;
   isAvailable: boolean;
   status: WalkingStatus;
+  isSystemTotalAvailable: boolean;
 };
 
 const getStartOfToday = (): Date => {
@@ -31,8 +35,9 @@ export const useStepCounter = (): UseStepCounterResult => {
   const baselineRef = useRef(0);
   const lastDateRef = useRef<string | null>(null);
   const todayStepsRef = useRef(0);
+  const isHealthConnectActiveRef = useRef(false);
   const previousSensorStepsRef = useRef<number | null>(null);
-  const canQueryRangesRef = useRef(true);
+  const canQueryRangesRef = useRef(Platform.OS !== 'android');
   const stoppedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateTodaySteps = (steps: number): void => {
@@ -66,8 +71,33 @@ export const useStepCounter = (): UseStepCounterResult => {
     }
   };
 
+  const syncHealthConnectSteps = async (): Promise<boolean> => {
+    const result = await readTodayStepsFromHealthConnect();
+
+    if (!result.available) {
+      isHealthConnectActiveRef.current = false;
+      return false;
+    }
+
+    const today = getTodayString();
+    isHealthConnectActiveRef.current = true;
+    updateTodaySteps(result.steps);
+    await saveStepsForDate(today, result.steps);
+    setStatus('stopped');
+    return true;
+  };
+
   const handleStepUpdate = async (currentSteps: number): Promise<void> => {
     const today = getTodayString();
+
+    if (isHealthConnectActiveRef.current) {
+      if (currentSteps > (previousSensorStepsRef.current ?? 0)) {
+        setStatus('walking');
+        scheduleStoppedStatus();
+      }
+      previousSensorStepsRef.current = currentSteps;
+      return;
+    }
 
     if (lastDateRef.current === null) {
       baselineRef.current = currentSteps;
@@ -83,11 +113,13 @@ export const useStepCounter = (): UseStepCounterResult => {
       await saveStepCounterState(currentSteps, today);
     }
 
-    const queriedSteps = await readTodayStepsFromRange();
-    const nextSteps = queriedSteps ?? currentSteps - baselineRef.current;
-    updateTodaySteps(nextSteps);
-
     const previousSteps = previousSensorStepsRef.current;
+    const liveStepDelta = previousSteps === null ? currentSteps : Math.max(0, currentSteps - previousSteps);
+    const queriedSteps = await readTodayStepsFromRange();
+    const nextSteps = queriedSteps ?? todayStepsRef.current + liveStepDelta;
+    updateTodaySteps(nextSteps);
+    await saveStepsForDate(today, nextSteps);
+
     if (previousSteps === null || currentSteps > previousSteps) {
       setStatus('walking');
       scheduleStoppedStatus();
@@ -119,6 +151,8 @@ export const useStepCounter = (): UseStepCounterResult => {
           return;
         }
 
+        const hasHealthConnectSteps = await syncHealthConnectSteps();
+
         const storedState = await readStepCounterState();
         baselineRef.current = storedState.baseline;
         lastDateRef.current = storedState.lastDate;
@@ -131,9 +165,14 @@ export const useStepCounter = (): UseStepCounterResult => {
           await saveStepCounterState(0, today);
         }
 
-        const initialSteps = await readTodayStepsFromRange();
-        if (isMounted && initialSteps !== null) {
-          updateTodaySteps(initialSteps);
+        if (!hasHealthConnectSteps) {
+          const initialSteps = await readTodayStepsFromRange();
+          if (isMounted && initialSteps !== null) {
+            updateTodaySteps(initialSteps);
+            await saveStepsForDate(today, initialSteps);
+          } else if (isMounted) {
+            updateTodaySteps(await readStepsForDate(today));
+          }
         }
 
         subscription = Pedometer.watchStepCount((result) => {
@@ -150,9 +189,22 @@ export const useStepCounter = (): UseStepCounterResult => {
 
     void startPedometer();
 
+    const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        void syncHealthConnectSteps();
+      }
+    });
+    const healthConnectRefreshInterval = setInterval(() => {
+      if (isHealthConnectActiveRef.current) {
+        void syncHealthConnectSteps();
+      }
+    }, 60000);
+
     return () => {
       isMounted = false;
       subscription?.remove();
+      appStateSubscription.remove();
+      clearInterval(healthConnectRefreshInterval);
 
       if (stoppedTimerRef.current !== null) {
         clearTimeout(stoppedTimerRef.current);
@@ -164,5 +216,6 @@ export const useStepCounter = (): UseStepCounterResult => {
     todaySteps,
     isAvailable,
     status,
+    isSystemTotalAvailable: canQueryRangesRef.current || isHealthConnectActiveRef.current,
   };
 };

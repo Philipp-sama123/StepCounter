@@ -11,7 +11,7 @@ import { useStepCounter } from '../src/hooks/useStepCounter';
 import { readGoal, saveGoal } from '../src/storage/stepStorage';
 
 export default function HomeScreen() {
-  const { todaySteps, isAvailable, status } = useStepCounter();
+  const { todaySteps, isAvailable, status, isSystemTotalAvailable } = useStepCounter();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
 
@@ -60,6 +60,10 @@ export default function HomeScreen() {
           <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
 
           {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Not supported on this device</Text>}
+
+          {isAvailable && !isSystemTotalAvailable ? (
+            <Text style={styles.liveNote}>Android live tracking counts new steps while this app is open.</Text>
+          ) : null}
 
           {hasReachedGoal ? (
             <View style={styles.goalBanner}>
@@ -147,6 +151,14 @@ const styles = StyleSheet.create({
     color: COLORS.warning,
     fontSize: 14,
     fontWeight: '700',
+  },
+  liveNote: {
+    maxWidth: 280,
+    color: COLORS.mutedText,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   goalBanner: {
     width: '100%',

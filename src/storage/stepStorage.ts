@@ -13,7 +13,14 @@ export type StepCounterState = {
   lastDate: string | null;
 };
 
-export const getTodayString = (): string => new Date().toISOString().slice(0, 10);
+const toLocalDateString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const getTodayString = (): string => toLocalDateString(new Date());
 
 const parseStoredNumber = (value: string | null, fallback: number): number => {
   if (value === null) {
@@ -97,7 +104,7 @@ export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => {
   const today = new Date(getTodayString());
   const dates = Array.from({ length: LAST_SEVEN_DAYS }, (_, index) => {
     const date = new Date(today.getTime() - (LAST_SEVEN_DAYS - 1 - index) * ONE_DAY_MS);
-    return date.toISOString().slice(0, 10);
+    return toLocalDateString(date);
   });
 
   try {

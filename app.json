@@ -2,6 +2,7 @@
   "expo": {
     "name": "StepCounter",
     "slug": "StepCounter",
+    "scheme": "stepcounter",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,7 +21,8 @@
     },
     "android": {
       "permissions": [
-        "ACTIVITY_RECOGNITION"
+        "ACTIVITY_RECOGNITION",
+        "android.permission.health.READ_STEPS"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -33,7 +35,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-health-connect",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
     ]
   }
 }

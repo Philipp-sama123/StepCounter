@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const STEP_HISTORY_KEY_PREFIX = 'steps:';
+export const CHALLENGE_SESSION_KEY_PREFIX = 'challenge:';
 
 export const HOME_PROGRESS_RING_SIZE = 236;
 export const HOME_PROGRESS_RING_WIDTH = 18;

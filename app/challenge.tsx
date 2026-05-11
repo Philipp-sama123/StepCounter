@@ -12,7 +12,7 @@ import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncDailySteps } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { getTodayString, readGoal, saveGoal } from '../src/storage/stepStorage';
+import { getTodayString, readGoal, saveGoal, readStepsForDate, saveStepsForDate, saveChallengeSession } from '../src/storage/stepStorage';
 
 export default function ChallengeScreen() {
     const {
@@ -31,6 +31,9 @@ export default function ChallengeScreen() {
     const { signOutUser, user } = useAuth();
     const [goal, setGoal] = useState(DEFAULT_GOAL);
     const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
+    const [isChallengeActive, setIsChallengeActive] = useState(false);
+    const [challengeStartSteps, setChallengeStartSteps] = useState<number | null>(null);
+    const [challengeStartAt, setChallengeStartAt] = useState<number | null>(null);
 
     useEffect(() => {
         const loadGoal = async (): Promise<void> => {
@@ -66,6 +69,8 @@ export default function ChallengeScreen() {
     const rawPercent = goal > 0 ? (todaySteps / goal) * 100 : 0;
     const progressPercent = Math.min(100, rawPercent);
     const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
+
+    const currentChallengeDelta = challengeStartSteps !== null ? Math.max(0, todaySteps - challengeStartSteps) : 0;
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -145,6 +150,61 @@ export default function ChallengeScreen() {
                             <Text style={styles.goalBannerText}>Daily goal reached. Beautiful work.</Text>
                         </View>
                     ) : null}
+
+                    <View style={{ marginTop: 12, alignItems: 'center' }}>
+                        <Pressable
+                            accessibilityLabel={isChallengeActive ? 'Pause challenge' : 'Start challenge'}
+                            accessibilityRole="button"
+                            onPress={async () => {
+                                if (!isChallengeActive) {
+                                    setIsChallengeActive(true);
+                                    setChallengeStartSteps(todaySteps);
+                                    setChallengeStartAt(Date.now());
+                                    return;
+                                }
+
+                                // Pausing/stopping the active challenge session
+                                setIsChallengeActive(false);
+                                const endAt = Date.now();
+                                const startAt = challengeStartAt ?? endAt;
+                                const startSteps = challengeStartSteps ?? todaySteps;
+                                const delta = Math.max(0, todaySteps - startSteps);
+
+                                if (delta > 0) {
+                                    const today = getTodayString();
+                                    try {
+                                        const existing = await readStepsForDate(today);
+                                        const newTotal = existing + delta;
+                                        await saveStepsForDate(today, newTotal);
+                                        await saveChallengeSession(today, {
+                                            startedAt: new Date(startAt).toISOString(),
+                                            endedAt: new Date(endAt).toISOString(),
+                                            steps: delta,
+                                            durationMs: endAt - startAt,
+                                        });
+                                    } catch (error) {
+                                        console.warn('Unable to save challenge session', error);
+                                    }
+                                }
+
+                                setChallengeStartSteps(null);
+                                setChallengeStartAt(null);
+                            }}
+                            style={({ pressed }) => [
+                                styles.challengeButton,
+                                isChallengeActive ? { backgroundColor: COLORS.danger } : null,
+                                pressed ? styles.pressed : null,
+                            ]}
+                        >
+                            <Text style={[styles.challengeButtonText, isChallengeActive ? { color: COLORS.surface } : null]}>
+                                {isChallengeActive ? 'Pause Challenge' : 'Start Challenge'}
+                            </Text>
+                        </Pressable>
+
+                        {isChallengeActive && (
+                            <Text style={{ marginTop: 8, color: COLORS.mutedText }}>{`Session steps: ${currentChallengeDelta.toLocaleString()}`}</Text>
+                        )}
+                    </View>
                 </View>
 
                 <View style={styles.statsGrid}>
@@ -385,5 +445,19 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         marginBottom: 2,
+    }
+    ,
+    challengeButton: {
+        alignItems: 'center',
+        backgroundColor: COLORS.primary,
+        borderRadius: 8,
+        height: 44,
+        justifyContent: 'center',
+        paddingHorizontal: 18,
+    },
+    challengeButtonText: {
+        color: COLORS.surface,
+        fontSize: 15,
+        fontWeight: '800',
     }
 });

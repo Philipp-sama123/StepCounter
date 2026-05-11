@@ -15,7 +15,7 @@ type ProgressRingProps = {
 
 export const ProgressRing = ({ steps, goal }: ProgressRingProps) => {
   const progress = Math.min(1, steps / goal);
-  const percentage = Math.round(progress * 100);
+  const percentage = (progress * 100).toFixed(2);
   const isComplete = steps >= goal;
   const radius = (HOME_PROGRESS_RING_SIZE - HOME_PROGRESS_RING_WIDTH - HOME_PROGRESS_RING_PADDING) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -46,7 +46,7 @@ export const ProgressRing = ({ steps, goal }: ProgressRingProps) => {
         />
       </Svg>
       <View style={styles.center}>
-        <Text style={styles.percentage}>{percentage}%</Text>
+        <Text style={styles.percentage}>{`${percentage}%`}</Text>
         <Text style={styles.caption}>of daily goal</Text>
       </View>
     </View>

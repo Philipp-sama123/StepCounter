@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { DEFAULT_GOAL, LAST_SEVEN_DAYS, ONE_DAY_MS, STEP_HISTORY_KEY_PREFIX, STORAGE_KEYS } from '../constants';
+import { DEFAULT_GOAL, LAST_SEVEN_DAYS, ONE_DAY_MS, STEP_HISTORY_KEY_PREFIX, CHALLENGE_SESSION_KEY_PREFIX, STORAGE_KEYS } from '../constants';
 
 export type StepHistoryEntry = {
   date: string;
@@ -127,5 +127,37 @@ export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => {
       dayName: new Date(date).toLocaleDateString(undefined, { weekday: 'short' }),
       steps: 0,
     }));
+  }
+};
+
+export type ChallengeSession = {
+  startedAt: string;
+  endedAt: string;
+  steps: number;
+  durationMs: number;
+};
+
+export const getChallengeKey = (date: string): string => `${CHALLENGE_SESSION_KEY_PREFIX}${date}`;
+
+export const saveChallengeSession = async (date: string, session: ChallengeSession): Promise<void> => {
+  try {
+    const key = getChallengeKey(date);
+    const existing = await AsyncStorage.getItem(key);
+    const arr: ChallengeSession[] = existing ? JSON.parse(existing) : [];
+    arr.push(session);
+    await AsyncStorage.setItem(key, JSON.stringify(arr));
+  } catch (error) {
+    console.warn(`Unable to save challenge session for ${date}.`, error);
+  }
+};
+
+export const readChallengeSessions = async (date: string): Promise<ChallengeSession[]> => {
+  try {
+    const key = getChallengeKey(date);
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as ChallengeSession[]) : [];
+  } catch (error) {
+    console.warn(`Unable to read challenge sessions for ${date}.`, error);
+    return [];
   }
 };

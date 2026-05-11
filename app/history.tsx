@@ -6,11 +6,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StepTrendChart } from '../src/components/StepTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
-import { readGoal, readLastSevenDays, StepHistoryEntry } from '../src/storage/stepStorage';
+import { readGoal, readLastSevenDays, readChallengeSessions, StepHistoryEntry } from '../src/storage/stepStorage';
 
 export default function HistoryScreen() {
   const [history, setHistory] = useState<StepHistoryEntry[]>([]);
   const [goal, setGoal] = useState(DEFAULT_GOAL);
+  const [sessionSums, setSessionSums] = useState<Record<string, number>>({});
 
   useFocusEffect(
     useCallback(() => {
@@ -18,9 +19,22 @@ export default function HistoryScreen() {
 
       const loadHistory = async (): Promise<void> => {
         const [entries, storedGoal] = await Promise.all([readLastSevenDays(), readGoal()]);
+
+        if (!isActive) return;
+
+        // Load challenge session sums for each date in parallel
+        const sessionPromises = entries.map((e) => readChallengeSessions(e.date));
+        const sessionResults = await Promise.all(sessionPromises);
+        const sums: Record<string, number> = {};
+        sessionResults.forEach((arr, idx) => {
+          const total = arr.reduce((t, s) => t + s.steps, 0);
+          sums[entries[idx].date] = total;
+        });
+
         if (isActive) {
           setHistory(entries);
           setGoal(storedGoal);
+          setSessionSums(sums);
         }
       };
 
@@ -85,6 +99,9 @@ export default function HistoryScreen() {
                     <View style={[styles.progressFill, reachedGoal ? styles.successFill : null, { width: `${progress * 100}%` }]} />
                   </View>
                   <Text style={styles.daySteps}>{entry.steps.toLocaleString()}</Text>
+                  {sessionSums[entry.date] > 0 ? (
+                    <Text style={styles.sessionNote}>{`+${sessionSums[entry.date].toLocaleString()} from sessions`}</Text>
+                  ) : null}
                 </View>
               </View>
             );
@@ -236,5 +253,11 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 13,
     fontWeight: '900',
+  },
+  sessionNote: {
+    color: COLORS.mutedText,
+    textAlign: 'right',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });

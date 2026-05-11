@@ -1,5 +1,7 @@
 export type StepDataSource = 'apple-health' | 'health-connect' | 'live-sensor' | 'unavailable';
 
+export type StepTrackingMode = 'live' | 'system' | 'combined';
+
 export type SystemStepResult =
   | {
       available: true;

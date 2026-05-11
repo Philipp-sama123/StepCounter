@@ -25,7 +25,7 @@ export default function HomeScreen() {
     source,
     status,
     todaySteps,
-  } = useStepCounter();
+  } = useStepCounter('combined');
   const { signOutUser, user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
@@ -70,7 +70,7 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.subtitle}>Welcome back</Text>
+            <Text style={styles.subtitle}>Combined Mode</Text>
             <Text style={styles.appName}>{displayName}</Text>
           </View>
           <View style={styles.headerActions}>

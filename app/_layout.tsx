@@ -42,10 +42,24 @@ const RootNavigator = () => {
       }}
     >
       <Tabs.Screen
+        name="challenge"
+        options={{
+          title: 'Challenge',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="walk-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="google"
+        options={{
+          title: 'Google Data',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="cloud-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="today-outline" size={size} />,
+          title: 'Combined',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="analytics-outline" size={size} />,
         }}
       />
       <Tabs.Screen

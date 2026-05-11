@@ -8,17 +8,14 @@ type StatusBadgeProps = {
 };
 
 export const StatusBadge = ({ status }: StatusBadgeProps) => {
-  if (status === 'unknown') {
-    return null;
-  }
-
   const isWalking = status === 'walking';
+  const isUnknown = status === 'unknown';
 
   return (
-    <View style={[styles.badge, isWalking ? styles.walkingBadge : styles.stoppedBadge]}>
-      <View style={[styles.dot, isWalking ? styles.walkingDot : styles.stoppedDot]} />
-      <Text style={[styles.text, isWalking ? styles.walkingText : styles.stoppedText]}>
-        {isWalking ? 'Walking' : 'Stopped'}
+    <View style={[styles.badge, isWalking ? styles.walkingBadge : isUnknown ? styles.unknownBadge : styles.stoppedBadge]}>
+      <View style={[styles.dot, isWalking ? styles.walkingDot : isUnknown ? styles.unknownDot : styles.stoppedDot]} />
+      <Text style={[styles.text, isWalking ? styles.walkingText : isUnknown ? styles.unknownText : styles.stoppedText]}>
+        {isWalking ? 'Walking' : isUnknown ? 'No information' : 'Stopped'}
       </Text>
     </View>
   );
@@ -39,6 +36,9 @@ const styles = StyleSheet.create({
   stoppedBadge: {
     backgroundColor: COLORS.stoppedSoft,
   },
+  unknownBadge: {
+    backgroundColor: COLORS.surface,
+  },
   dot: {
     width: 9,
     height: 9,
@@ -50,6 +50,9 @@ const styles = StyleSheet.create({
   stoppedDot: {
     backgroundColor: COLORS.stopped,
   },
+  unknownDot: {
+    backgroundColor: COLORS.textSecondary,
+  },
   text: {
     fontSize: 14,
     fontWeight: '700',
@@ -59,5 +62,8 @@ const styles = StyleSheet.create({
   },
   stoppedText: {
     color: COLORS.stopped,
+  },
+  unknownText: {
+    color: COLORS.textSecondary,
   },
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from './AuthContext';
@@ -7,6 +7,7 @@ import { COLORS } from '../constants';
 
 export const LoginScreen = () => {
   const { isConfigured, registerWithEmail, signInWithEmail } = useAuth();
+  const { sendPasswordReset } = useAuth();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -36,6 +37,25 @@ export const LoginScreen = () => {
     } catch (authError) {
       logAuthError(authError);
       setError(getFriendlyAuthError(authError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePasswordReset = async (): Promise<void> => {
+    if (email.trim().length === 0) {
+      setError('Enter the email address for your account to receive reset instructions.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      await sendPasswordReset(email.trim());
+      Alert.alert('Password reset', 'If that email is registered, you will receive instructions to reset your password.');
+    } catch (err) {
+      logAuthError(err);
+      setError(getFriendlyAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -101,6 +121,16 @@ export const LoginScreen = () => {
             style={({ pressed }) => [styles.primaryButton, pressed ? styles.pressed : null, !isConfigured ? styles.disabled : null]}
           >
             {isSubmitting ? <ActivityIndicator color={COLORS.surface} /> : <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
+          </Pressable>
+
+          <Pressable
+            disabled={isSubmitting}
+            onPress={() => {
+              void handlePasswordReset();
+            }}
+            style={styles.forgotPassword}
+          >
+            <Text style={styles.forgotPasswordText}>Forgot password?</Text>
           </Pressable>
 
           <View style={[styles.googleButton, styles.disabled]}>
@@ -230,6 +260,15 @@ const styles = StyleSheet.create({
   switchModeText: {
     color: COLORS.primary,
     fontSize: 14,
+    fontWeight: '800',
+  },
+  forgotPassword: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  forgotPasswordText: {
+    color: COLORS.primary,
+    fontSize: 13,
     fontWeight: '800',
   },
   error: {

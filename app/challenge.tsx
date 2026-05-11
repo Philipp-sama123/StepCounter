@@ -63,7 +63,8 @@ export default function ChallengeScreen() {
 
     const hasReachedGoal = todaySteps >= goal;
     const remainingSteps = Math.max(0, goal - todaySteps);
-    const progressPercent = Math.min(100, Math.round((todaySteps / goal) * 100));
+    const rawPercent = goal > 0 ? (todaySteps / goal) * 100 : 0;
+    const progressPercent = Math.min(100, rawPercent);
     const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
 
     return (
@@ -147,7 +148,7 @@ export default function ChallengeScreen() {
                 </View>
 
                 <View style={styles.statsGrid}>
-                    <StatCard label="Progress" value={`${progressPercent}%`} />
+                    <StatCard label="Progress" value={`${progressPercent.toFixed(2)}%`} />
                     <StatCard label="Remaining" value={remainingSteps === 0 ? 'Done' : remainingSteps.toLocaleString()} />
                     <StatCard label="Source" value={getSourceLabel(source)} />
                     <StatCard label="Synced" value={formatSyncTime(lastSyncedAt)} />

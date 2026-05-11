@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   signInWithCredential,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   updateProfile,
   User,
@@ -19,6 +20,7 @@ type AuthContextValue = {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogleIdToken: (idToken: string) => Promise<void>;
   registerWithEmail: (name: string, email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   user: User | null;
 };
@@ -82,6 +84,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
         const credential = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
         await upsertUserProfile(credential.user);
+      },
+      sendPasswordReset: async (email) => {
+        if (firebaseAuth === null) {
+          throw new Error('Firebase is not configured.');
+        }
+
+        await sendPasswordResetEmail(firebaseAuth, email.trim());
       },
       registerWithEmail: async (name, email, password) => {
         if (firebaseAuth === null) {

@@ -1,6 +1,7 @@
 import { FirebaseApp, getApp, getApps, initializeApp } from 'firebase/app';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Auth, getAuth, getReactNativePersistence, initializeAuth } from 'firebase/auth';
+import * as FirebaseAuth from '@firebase/auth';
+import { Auth, getAuth, initializeAuth, Persistence } from '@firebase/auth';
 import { Firestore, getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -20,12 +21,23 @@ export const firebaseApp: FirebaseApp | null = isFirebaseConfigured
     : initializeApp(firebaseConfig)
   : null;
 
+const getReactNativePersistence = (
+  FirebaseAuth as typeof FirebaseAuth & {
+    getReactNativePersistence?: (storage: typeof AsyncStorage) => Persistence;
+  }
+).getReactNativePersistence;
+
 const getFirebaseAuth = (app: FirebaseApp): Auth => {
   try {
+    if (getReactNativePersistence === undefined) {
+      throw new Error('React Native Firebase auth persistence export is unavailable.');
+    }
+
     return initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     });
-  } catch {
+  } catch (error) {
+    console.warn('Firebase auth persistence unavailable. Falling back to memory persistence.', error);
     return getAuth(app);
   }
 };

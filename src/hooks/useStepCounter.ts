@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 
 import { STATUS_STOPPED_DELAY_MS } from '../constants';
@@ -15,13 +15,21 @@ import { StepDataSource, StepTrackingMode } from '../health/types';
 
 export type WalkingStatus = 'walking' | 'stopped' | 'unknown';
 
+export type StepSensorLogEntry = {
+  delta: number;
+  rawSteps: number;
+  timestamp: string;
+  totalSteps: number;
+};
+
 export type UseStepCounterResult = {
   debugMessage: string;
   todaySteps: number;
+  sensorLog: StepSensorLogEntry[];
   isAvailable: boolean;
   isRefreshing: boolean;
   lastSyncedAt: string | null;
-  refreshSteps: () => Promise<void>;
+  refreshSteps: () => Promise<string>;
   requestPermissions: () => Promise<boolean>;
   status: WalkingStatus;
   isSystemTotalAvailable: boolean;
@@ -43,6 +51,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [source, setSource] = useState<StepDataSource>('unavailable');
   const [status, setStatus] = useState<WalkingStatus>('unknown');
+  const [sensorLog, setSensorLog] = useState<StepSensorLogEntry[]>([]);
 
   const baselineRef = useRef(0);
   const lastDateRef = useRef<string | null>(null);
@@ -56,6 +65,10 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     const safeSteps = Math.max(0, Math.floor(steps));
     todayStepsRef.current = safeSteps;
     setTodaySteps(safeSteps);
+  };
+
+  const addSensorLogEntry = (entry: StepSensorLogEntry): void => {
+    setSensorLog((currentLog) => [entry, ...currentLog].slice(0, 5));
   };
 
   const scheduleStoppedStatus = (): void => {
@@ -159,6 +172,12 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     const nextSteps = queriedSteps ?? todayStepsRef.current + liveStepDelta;
     updateTodaySteps(nextSteps);
     await saveStepsForDate(today, nextSteps);
+    addSensorLogEntry({
+      delta: liveStepDelta,
+      rawSteps: currentSteps,
+      timestamp: new Date().toISOString(),
+      totalSteps: nextSteps,
+    });
 
     if (previousSteps === null || currentSteps > previousSteps) {
       setStatus('walking');
@@ -235,12 +254,9 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
           }
         }
 
-        // Subscribe to pedometer for live updates, unless mode is 'system'
-        if (mode !== 'system') {
-          subscription = Pedometer.watchStepCount((result) => {
-            void handleStepUpdate(result.steps);
-          });
-        }
+        subscription = Pedometer.watchStepCount((result) => {
+          void handleStepUpdate(result.steps);
+        });
       } catch (error) {
         console.warn('Unable to start pedometer.', error);
         if (isMounted) {
@@ -254,7 +270,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     void startPedometer();
 
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
+      if (nextAppState === 'active' && mode !== 'live') {
         void syncSystemHealthSteps();
       }
     });
@@ -276,9 +292,17 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     };
   }, []);
 
+  const isSystemTotalAvailable =
+    mode === 'system'
+      ? isSystemHealthActiveRef.current
+      : mode === 'combined'
+        ? canQueryRangesRef.current || isSystemHealthActiveRef.current
+        : canQueryRangesRef.current;
+
   return {
     debugMessage,
     todaySteps,
+    sensorLog,
     isAvailable,
     isRefreshing,
     lastSyncedAt,
@@ -286,40 +310,43 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
       try {
         if (mode === 'live') {
           if (Platform.OS === 'android') {
-            Alert.alert('Refresh Unavailable', 'Live sensor refresh is not available on Android. Steps update in real-time.');
-            setDebugMessage('Live sensor refresh not available on Android. Steps update in real-time.');
-            return;
+            const message = 'Live sensor refresh is not available on Android. Steps update in real-time.';
+            setDebugMessage(message);
+            return message;
           }
           // For live on iOS, refresh from pedometer range
           const steps = await readTodayStepsFromRange();
           if (steps !== null) {
             updateTodaySteps(steps);
             await saveStepsForDate(getTodayString(), steps);
-            Alert.alert('Steps Refreshed', `Loaded ${steps.toLocaleString()} steps from device sensors.`);
+            const message = `Loaded ${steps.toLocaleString()} steps from device sensors.`;
             setDebugMessage(`Refreshed ${steps.toLocaleString()} steps from sensors.`);
+            return message;
           } else {
-            Alert.alert('Refresh Failed', 'Unable to refresh sensor data.');
-            setDebugMessage('Unable to refresh sensor data.');
+            const message = 'Unable to refresh sensor data.';
+            setDebugMessage(message);
+            return message;
           }
         } else {
           // For system and combined, refresh system health
           const loadedSteps = await syncSystemHealthSteps();
           if (loadedSteps !== null) {
-            Alert.alert('Steps Refreshed', `Loaded ${loadedSteps.toLocaleString()} steps from ${getSourceLabel(source)}.`);
+            return `Loaded ${loadedSteps.toLocaleString()} steps from ${getSourceLabel(source)}.`;
           } else {
-            Alert.alert('Refresh Failed', 'Unable to load health data. Check permissions.');
+            return 'Unable to load health data. Check permissions.';
           }
         }
       } catch (error) {
         console.warn('Manual step refresh failed.', error);
-        Alert.alert('Refresh Failed', 'Step refresh failed. Check permissions and try again.');
-        setDebugMessage('Step refresh failed. Check permissions and try again.');
+        const message = 'Step refresh failed. Check permissions and try again.';
+        setDebugMessage(message);
         setIsRefreshing(false);
+        return message;
       }
     },
     requestPermissions,
     status,
-    isSystemTotalAvailable: mode === 'live' ? canQueryRangesRef.current : (mode === 'system' ? isSystemHealthActiveRef.current : (canQueryRangesRef.current || isSystemHealthActiveRef.current)),
+    isSystemTotalAvailable,
     source,
     canRefresh: !(mode === 'live' && Platform.OS === 'android'),
   };

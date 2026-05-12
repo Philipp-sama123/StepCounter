@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import {
@@ -11,19 +12,118 @@ import {
 type ProgressRingProps = {
   steps: number;
   goal: number;
+  resetAnimationKey?: number;
 };
 
-export const ProgressRing = ({ steps, goal }: ProgressRingProps) => {
-  const progress = Math.min(1, steps / goal);
-  const percentage = (progress * 100).toFixed(2);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+export const ProgressRing = ({ steps, goal, resetAnimationKey = 0 }: ProgressRingProps) => {
+  const targetProgress = goal > 0 ? Math.min(1, steps / goal) : 0;
+  const [displayProgress, setDisplayProgress] = useState(targetProgress);
+  const animatedProgress = useRef(new Animated.Value(targetProgress)).current;
+  const resetAnimationKeyRef = useRef(resetAnimationKey);
+  const previousSteps = useRef(steps);
+  const gainScale = useRef(new Animated.Value(1)).current;
+  const percentageScale = useRef(new Animated.Value(1)).current;
+
+  const playGainAnimation = (delay = 0): void => {
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.parallel([
+        Animated.sequence([
+          Animated.spring(gainScale, {
+            friction: 5,
+            tension: 170,
+            toValue: 1.045,
+            useNativeDriver: true,
+          }),
+          Animated.spring(gainScale, {
+            friction: 6,
+            tension: 160,
+            toValue: 1,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.spring(percentageScale, {
+            friction: 4,
+            tension: 190,
+            toValue: 1.1,
+            useNativeDriver: true,
+          }),
+          Animated.spring(percentageScale, {
+            friction: 6,
+            tension: 160,
+            toValue: 1,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]),
+    ]).start();
+  };
+
+  useEffect(() => {
+    const listenerId = animatedProgress.addListener(({ value }) => {
+      setDisplayProgress(value);
+    });
+
+    return () => {
+      animatedProgress.removeListener(listenerId);
+    };
+  }, [animatedProgress]);
+
+  useEffect(() => {
+    if (resetAnimationKey !== resetAnimationKeyRef.current) {
+      return;
+    }
+
+    Animated.timing(animatedProgress, {
+      duration: 650,
+      toValue: targetProgress,
+      useNativeDriver: false,
+    }).start();
+
+    if (steps > previousSteps.current) {
+      playGainAnimation();
+    }
+
+    previousSteps.current = steps;
+  }, [animatedProgress, resetAnimationKey, steps, targetProgress]);
+
+  useEffect(() => {
+    if (resetAnimationKey === resetAnimationKeyRef.current) {
+      return undefined;
+    }
+
+    resetAnimationKeyRef.current = resetAnimationKey;
+    animatedProgress.stopAnimation();
+    animatedProgress.setValue(0);
+    setDisplayProgress(0);
+
+    Animated.sequence([
+      Animated.delay(80),
+      Animated.timing(animatedProgress, {
+        duration: 820,
+        toValue: targetProgress,
+        useNativeDriver: false,
+      }),
+    ]).start();
+
+    playGainAnimation(200);
+  }, [animatedProgress, resetAnimationKey, targetProgress]);
+
+  const percentage = formatProgressPercentage(displayProgress);
   const isComplete = steps >= goal;
   const radius = (HOME_PROGRESS_RING_SIZE - HOME_PROGRESS_RING_WIDTH - HOME_PROGRESS_RING_PADDING) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference * (1 - progress);
-  const ringColor = isComplete ? COLORS.success : COLORS.primary;
+  const strokeDashoffset = animatedProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [circumference, 0],
+  });
+  const ringColor = isComplete ? COLORS.success : COLORS.action;
 
   return (
-    <View style={styles.ring}>
+    <Animated.View style={[styles.ring, { transform: [{ scale: gainScale }] }]}>
       <Svg height={HOME_PROGRESS_RING_SIZE} style={styles.svg} width={HOME_PROGRESS_RING_SIZE}>
         <Circle
           cx={HOME_PROGRESS_RING_SIZE / 2}
@@ -33,7 +133,7 @@ export const ProgressRing = ({ steps, goal }: ProgressRingProps) => {
           stroke={COLORS.border}
           strokeWidth={HOME_PROGRESS_RING_WIDTH}
         />
-        <Circle
+        <AnimatedCircle
           cx={HOME_PROGRESS_RING_SIZE / 2}
           cy={HOME_PROGRESS_RING_SIZE / 2}
           fill="none"
@@ -46,12 +146,32 @@ export const ProgressRing = ({ steps, goal }: ProgressRingProps) => {
         />
       </Svg>
       <View style={styles.center}>
-        <Text style={styles.percentage}>{`${percentage}%`}</Text>
+        <Animated.View style={{ transform: [{ scale: percentageScale }] }}>
+          <PercentageLabel value={percentage} />
+        </Animated.View>
         <Text style={styles.caption}>of daily goal</Text>
       </View>
-    </View>
+    </Animated.View>
   );
 };
+
+type PercentageLabelProps = {
+  value: string;
+};
+
+const PercentageLabel = ({ value }: PercentageLabelProps) => {
+  const [wholePercentage, decimalPercentage] = value.split('.');
+
+  return (
+    <Text style={styles.percentage}>
+      {wholePercentage}
+      <Text style={styles.percentageDecimal}>{`.${decimalPercentage}`}</Text>
+      <Text style={styles.percentageSuffix}>%</Text>
+    </Text>
+  );
+};
+
+const formatProgressPercentage = (progress: number): string => (progress * 100).toFixed(2);
 
 const styles = StyleSheet.create({
   ring: {
@@ -71,8 +191,18 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   percentage: {
-    color: COLORS.text,
+    color: COLORS.action,
     fontSize: 48,
+    fontWeight: '800',
+  },
+  percentageDecimal: {
+    color: COLORS.action,
+    fontSize: 27,
+    fontWeight: '800',
+  },
+  percentageSuffix: {
+    color: COLORS.action,
+    fontSize: 22,
     fontWeight: '800',
   },
   caption: {

@@ -1,13 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
+import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
 import { GoalModal } from '../src/components/GoalModal';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
+import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncDailySteps } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
@@ -19,10 +23,9 @@ export default function ChallengeScreen() {
         debugMessage,
         isAvailable,
         isRefreshing,
-        isSystemTotalAvailable,
-        lastSyncedAt,
         refreshSteps,
         requestPermissions,
+        sensorLog,
         source,
         status,
         todaySteps,
@@ -34,6 +37,11 @@ export default function ChallengeScreen() {
     const [isChallengeActive, setIsChallengeActive] = useState(false);
     const [challengeStartSteps, setChallengeStartSteps] = useState<number | null>(null);
     const [challengeStartAt, setChallengeStartAt] = useState<number | null>(null);
+    const [progressResetKey, setProgressResetKey] = useState(0);
+    const [stepReplayKey, setStepReplayKey] = useState(0);
+    const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
+    const [sessionToastMessages, setSessionToastMessages] = useState<ToastMessageItem[]>([]);
+    const sessionOpacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
         const loadGoal = async (): Promise<void> => {
@@ -64,10 +72,65 @@ export default function ChallengeScreen() {
         await saveGoal(nextGoal);
     };
 
+    const handleRefreshSteps = async (): Promise<void> => {
+        const message = await refreshSteps();
+        showToast(message);
+        setProgressResetKey((currentKey) => currentKey + 1);
+        setStepReplayKey((currentKey) => currentKey + 1);
+    };
+
+    const showToast = (message: string): void => {
+        setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+    };
+
+    const showSessionToast = (message: string): void => {
+        setSessionToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+    };
+
+    const hideToast = (id: number): void => {
+        setToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
+    };
+
+    const hideSessionToast = (id: number): void => {
+        setSessionToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
+    };
+
+    useEffect(() => {
+        if (!isChallengeActive) {
+            sessionOpacity.setValue(1);
+            return undefined;
+        }
+
+        const loop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(sessionOpacity, {
+                    duration: 520,
+                    toValue: 0.48,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(sessionOpacity, {
+                    duration: 520,
+                    toValue: 1,
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+
+        loop.start();
+
+        return () => {
+            loop.stop();
+        };
+    }, [isChallengeActive, sessionOpacity]);
+
+    useFocusEffect(
+        useCallback(() => {
+            setProgressResetKey((currentKey) => currentKey + 1);
+            setStepReplayKey((currentKey) => currentKey + 1);
+        }, []),
+    );
+
     const hasReachedGoal = todaySteps >= goal;
-    const remainingSteps = Math.max(0, goal - todaySteps);
-    const rawPercent = goal > 0 ? (todaySteps / goal) * 100 : 0;
-    const progressPercent = Math.min(100, rawPercent);
     const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
 
     const currentChallengeDelta = challengeStartSteps !== null ? Math.max(0, todaySteps - challengeStartSteps) : 0;
@@ -82,15 +145,15 @@ export default function ChallengeScreen() {
                         <Text style={styles.appName}>{displayName}</Text>
                     </View>
                     <View style={styles.headerActions}>
-                        <Pressable
+                        <AnimatedPressable
                             accessibilityLabel="Edit daily step goal"
                             accessibilityRole="button"
                             onPress={() => setIsGoalModalVisible(true)}
                             style={styles.iconButton}
                         >
                             <Ionicons color={COLORS.text} name="settings-outline" size={24} />
-                        </Pressable>
-                        <Pressable
+                        </AnimatedPressable>
+                        <AnimatedPressable
                             accessibilityLabel="Sign out"
                             accessibilityRole="button"
                             onPress={() => {
@@ -99,50 +162,59 @@ export default function ChallengeScreen() {
                             style={styles.iconButton}
                         >
                             <Ionicons color={COLORS.text} name="log-out-outline" size={23} />
-                        </Pressable>
+                        </AnimatedPressable>
                     </View>
                 </View>
 
                 <View style={styles.hero}>
-                    <ProgressRing goal={goal} steps={isAvailable ? todaySteps : 0} />
+                    <ProgressRing goal={goal} resetAnimationKey={progressResetKey} steps={isAvailable ? todaySteps : 0} />
                     <View style={styles.stepBlock}>
-                        <Text style={styles.stepCount}>{(isAvailable ? todaySteps : 0).toLocaleString()}</Text>
-                        <Text style={styles.stepLabel}>steps today</Text>
+                        {isChallengeActive ? (
+                            <Animated.View style={[styles.sessionStepsPanel, { opacity: sessionOpacity }]}>
+                                <AnimatedStepCount replayKey={stepReplayKey} steps={currentChallengeDelta} style={styles.sessionStepCount} />
+                                <Text style={styles.sessionStepLabel}>session steps</Text>
+                            </Animated.View>
+                        ) : (
+                            <>
+                                <AnimatedStepCount replayKey={stepReplayKey} steps={isAvailable ? todaySteps : 0} style={styles.stepCount} />
+                                <Text style={styles.stepLabel}>steps today</Text>
+                            </>
+                        )}
                     </View>
                     <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
 
                     <View style={styles.statusRow}>
-            <StatusBadge status={status} />
-            {!isAvailable && (
-              <View style={styles.permissionContainer}>
-                <Text style={styles.unsupported}>Permissions required for step tracking</Text>
-                <Pressable
-                  accessibilityLabel="Request pedometer permissions"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void requestPermissions();
-                  }}
-                  style={({ pressed }) => [styles.permissionButton, pressed ? styles.pressed : null]}
-                >
-                  <Text style={styles.permissionButtonText}>Request Permissions</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
+                        <StatusBadge attention={isChallengeActive} status={status} />
+                        {!isAvailable && (
+                            <View style={styles.permissionContainer}>
+                                <Text style={styles.unsupported}>Permissions required for step tracking</Text>
+                                <AnimatedPressable
+                                    accessibilityLabel="Request pedometer permissions"
+                                    accessibilityRole="button"
+                                    onPress={() => {
+                                        void requestPermissions();
+                                    }}
+                                    style={({ pressed }) => [styles.permissionButton, pressed ? styles.pressed : null]}
+                                >
+                                    <Text style={styles.permissionButtonText}>Request Permissions</Text>
+                                </AnimatedPressable>
+                            </View>
+                        )}
+                    </View>
 
                     {canRefresh && (
-                        <Pressable
+                        <AnimatedPressable
                             accessibilityLabel="Refresh sensor step data"
                             accessibilityRole="button"
                             disabled={isRefreshing}
                             onPress={() => {
-                                void refreshSteps();
+                                void handleRefreshSteps();
                             }}
-                            style={({ pressed }) => [styles.refreshButton, pressed ? styles.pressed : null, isRefreshing ? styles.disabled : null]}
+                            style={({ pressed }) => [styles.refreshButton, isRefreshing ? styles.refreshing : null, pressed ? styles.pressed : null]}
                         >
                             {isRefreshing ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="refresh-outline" size={18} />}
                             <Text style={styles.refreshButtonText}>{isRefreshing ? 'Refreshing' : 'Refresh steps'}</Text>
-                        </Pressable>
+                        </AnimatedPressable>
                     )}
 
                     {hasReachedGoal ? (
@@ -152,7 +224,8 @@ export default function ChallengeScreen() {
                     ) : null}
 
                     <View style={{ marginTop: 12, alignItems: 'center' }}>
-                        <Pressable
+                        <AnimatedPressable
+                            activePulse={isChallengeActive}
                             accessibilityLabel={isChallengeActive ? 'Pause challenge' : 'Start challenge'}
                             accessibilityRole="button"
                             onPress={async () => {
@@ -182,46 +255,60 @@ export default function ChallengeScreen() {
                                             steps: delta,
                                             durationMs: endAt - startAt,
                                         });
+                                        showSessionToast(`+${delta.toLocaleString()} session steps added`);
                                     } catch (error) {
                                         console.warn('Unable to save challenge session', error);
                                     }
+                                } else {
+                                    showSessionToast('No session steps added');
                                 }
 
                                 setChallengeStartSteps(null);
                                 setChallengeStartAt(null);
                             }}
-                            style={({ pressed }) => [
+                            style={[
                                 styles.challengeButton,
-                                isChallengeActive ? { backgroundColor: COLORS.danger } : null,
-                                pressed ? styles.pressed : null,
+                                isChallengeActive ? styles.challengeStopButton : styles.challengeStartButton,
                             ]}
                         >
                             <Text style={[styles.challengeButtonText, isChallengeActive ? { color: COLORS.surface } : null]}>
                                 {isChallengeActive ? 'Pause Challenge' : 'Start Challenge'}
                             </Text>
-                        </Pressable>
+                        </AnimatedPressable>
 
-                        {isChallengeActive && (
-                            <Text style={{ marginTop: 8, color: COLORS.mutedText }}>{`Session steps: ${currentChallengeDelta.toLocaleString()}`}</Text>
+                    </View>
+                </View>
+
+                <View style={styles.sensorSection}>
+                    <View style={styles.sensorSummary}>
+                        <View style={styles.sensorSummaryItem}>
+                            <Text style={styles.sensorSummaryLabel}>Source</Text>
+                            <Text style={styles.sensorSummaryValue}>{getSourceLabel(source)}</Text>
+                        </View>
+                        <View style={styles.sensorSummaryItem}>
+                            <Text style={styles.sensorSummaryLabel}>Session</Text>
+                            <Text style={styles.sensorSummaryValue}>{currentChallengeDelta.toLocaleString()}</Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.sensorConsole}>
+                        <View style={styles.consoleHeader}>
+                            <Text style={styles.consoleTitle}>Live sensor log</Text>
+                            <Text style={styles.consoleMeta}>last 5</Text>
+                        </View>
+                        {sensorLog.length > 0 ? (
+                            sensorLog.map((entry) => (
+                                <View key={`${entry.timestamp}-${entry.rawSteps}`} style={styles.consoleRow}>
+                                    <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
+                                    <Text style={styles.consoleLine}>{`raw ${entry.rawSteps.toLocaleString()}  +${entry.delta.toLocaleString()}  total ${entry.totalSteps.toLocaleString()}`}</Text>
+                                </View>
+                            ))
+                        ) : (
+                            <Text style={styles.consoleEmpty}>waiting for live pedometer events...</Text>
                         )}
                     </View>
-                </View>
 
-                <View style={styles.statsGrid}>
-                    <StatCard label="Progress" value={`${progressPercent.toFixed(2)}%`} />
-                    <StatCard label="Remaining" value={remainingSteps === 0 ? 'Done' : remainingSteps.toLocaleString()} />
-                    <StatCard label="Source" value={getSourceLabel(source)} />
-                    <StatCard label="Synced" value={formatSyncTime(lastSyncedAt)} />
-                </View>
-
-                <View style={styles.syncPanel}>
-                    <View style={styles.syncIcon}>
-                        <Ionicons color={COLORS.primary} name="fitness-outline" size={20} />
-                    </View>
-                    <View style={styles.syncCopy}>
-                        <Text style={styles.syncTitle}>Live Sensor Tracking</Text>
-                        <Text style={styles.syncText}>{debugMessage}</Text>
-                    </View>
+                    <Text style={styles.sensorHint}>{debugMessage}</Text>
                 </View>
             </ScrollView>
 
@@ -233,21 +320,11 @@ export default function ChallengeScreen() {
                     void handleSaveGoal(nextGoal);
                 }}
             />
+            <ToastStack messages={toastMessages} onHide={hideToast} />
+            <ToastStack messages={sessionToastMessages} onHide={hideSessionToast} placement="bottom" />
         </SafeAreaView>
     );
 }
-
-type StatCardProps = {
-    label: string;
-    value: string;
-};
-
-const StatCard = ({ label, value }: StatCardProps) => (
-    <View style={styles.statCard}>
-        <Text style={styles.statLabel}>{label}</Text>
-        <Text style={styles.statValue}>{value}</Text>
-    </View>
-);
 
 const getSourceLabel = (source: StepDataSource): string => {
     if (source === 'apple-health') {
@@ -265,16 +342,11 @@ const getSourceLabel = (source: StepDataSource): string => {
     return 'Local';
 };
 
-const formatSyncTime = (lastSyncedAt: string | null): string => {
-    if (lastSyncedAt === null) {
-        return 'Not yet';
-    }
-
-    return new Date(lastSyncedAt).toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
+const formatLogTime = (timestamp: string): string => new Date(timestamp).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+});
 
 const styles = StyleSheet.create({
     safeArea: {
@@ -293,7 +365,7 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     subtitle: {
-        color: COLORS.textSecondary,
+        color: COLORS.mutedText,
         fontSize: 16,
         fontWeight: '500',
     },
@@ -323,9 +395,29 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     stepCount: {
-        color: COLORS.text,
+        color: COLORS.action,
         fontSize: 48,
         fontWeight: 'bold',
+    },
+    sessionStepsPanel: {
+        alignItems: 'center',
+        backgroundColor: COLORS.challengeSoft,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        minWidth: 190,
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+    },
+    sessionStepCount: {
+        color: COLORS.challenge,
+        fontSize: 46,
+        fontWeight: 'bold',
+    },
+    sessionStepLabel: {
+        color: COLORS.challenge,
+        fontSize: 14,
+        fontWeight: '800',
     },
     stepLabel: {
         color: COLORS.text,
@@ -363,7 +455,7 @@ const styles = StyleSheet.create({
     },
     refreshButton: {
         alignItems: 'center',
-        backgroundColor: COLORS.primary,
+        backgroundColor: COLORS.action,
         borderRadius: 8,
         flexDirection: 'row',
         gap: 8,
@@ -374,8 +466,8 @@ const styles = StyleSheet.create({
     pressed: {
         opacity: 0.8,
     },
-    disabled: {
-        opacity: 0.5,
+    refreshing: {
+        opacity: 0.9,
     },
     refreshButtonText: {
         color: COLORS.surface,
@@ -395,69 +487,106 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
     },
-    statsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
+    sensorSection: {
         gap: 12,
-        marginBottom: 32,
+        marginBottom: 28,
     },
-    statCard: {
-        alignItems: 'center',
+    sensorSummary: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    sensorSummaryItem: {
         backgroundColor: COLORS.surface,
+        borderColor: COLORS.border,
         borderRadius: 8,
+        borderWidth: 1,
         flex: 1,
-        minWidth: '45%',
-        paddingHorizontal: 16,
+        paddingHorizontal: 14,
         paddingVertical: 12,
     },
-    statLabel: {
-        color: COLORS.textSecondary,
+    sensorSummaryLabel: {
+        color: COLORS.mutedText,
         fontSize: 12,
+        fontWeight: '800',
         marginBottom: 4,
     },
-    statValue: {
+    sensorSummaryValue: {
         color: COLORS.text,
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '800',
     },
-    syncPanel: {
-        alignItems: 'center',
-        backgroundColor: COLORS.surface,
+    sensorConsole: {
+        backgroundColor: '#08110D',
+        borderColor: '#173528',
         borderRadius: 8,
-        flexDirection: 'row',
-        gap: 12,
-        paddingHorizontal: 16,
+        borderWidth: 1,
+        minHeight: 158,
+        paddingHorizontal: 14,
         paddingVertical: 12,
     },
-    syncIcon: {
+    consoleHeader: {
         alignItems: 'center',
-        backgroundColor: COLORS.primary,
-        borderRadius: 20,
-        height: 40,
-        justifyContent: 'center',
-        width: 40,
+        borderBottomColor: '#173528',
+        borderBottomWidth: 1,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+        paddingBottom: 8,
     },
-    syncCopy: {
+    consoleTitle: {
+        color: '#E8FFF2',
+        fontSize: 13,
+        fontWeight: '900',
+    },
+    consoleMeta: {
+        color: '#7CE7A8',
+        fontSize: 12,
+        fontWeight: '800',
+    },
+    consoleRow: {
+        flexDirection: 'row',
+        gap: 10,
+        paddingVertical: 4,
+    },
+    consoleTime: {
+        color: '#7CE7A8',
+        fontFamily: 'monospace',
+        fontSize: 12,
+        width: 72,
+    },
+    consoleLine: {
+        color: '#D9FFE8',
         flex: 1,
+        fontFamily: 'monospace',
+        fontSize: 12,
     },
-    syncTitle: {
-        color: COLORS.text,
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 2,
-    }
-    ,
+    consoleEmpty: {
+        color: '#7CE7A8',
+        fontFamily: 'monospace',
+        fontSize: 12,
+    },
+    sensorHint: {
+        color: COLORS.mutedText,
+        fontSize: 13,
+        fontWeight: '700',
+        lineHeight: 18,
+    },
     challengeButton: {
         alignItems: 'center',
-        backgroundColor: COLORS.primary,
         borderRadius: 8,
         height: 44,
         justifyContent: 'center',
         paddingHorizontal: 18,
     },
+    challengeStartButton: {
+        backgroundColor: COLORS.action,
+    },
+    challengeStopButton: {
+        backgroundColor: COLORS.danger,
+    },
     challengeButtonText: {
-        color: COLORS.surface,
+        color: COLORS.challengeText,
         fontSize: 15,
         fontWeight: '800',
-    }
+    },
 });

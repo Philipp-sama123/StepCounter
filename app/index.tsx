@@ -1,13 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
+import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
 import { GoalModal } from '../src/components/GoalModal';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
+import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncDailySteps } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
@@ -29,6 +33,9 @@ export default function HomeScreen() {
   const { signOutUser, user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
+  const [progressResetKey, setProgressResetKey] = useState(0);
+  const [stepReplayKey, setStepReplayKey] = useState(0);
+  const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
 
   useEffect(() => {
     const loadGoal = async (): Promise<void> => {
@@ -59,6 +66,28 @@ export default function HomeScreen() {
     await saveGoal(nextGoal);
   };
 
+  const handleRefreshSteps = async (): Promise<void> => {
+    const message = await refreshSteps();
+    showToast(message);
+    setProgressResetKey((currentKey) => currentKey + 1);
+    setStepReplayKey((currentKey) => currentKey + 1);
+  };
+
+  const showToast = (message: string): void => {
+    setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+  };
+
+  const hideToast = (id: number): void => {
+    setToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      setProgressResetKey((currentKey) => currentKey + 1);
+      setStepReplayKey((currentKey) => currentKey + 1);
+    }, []),
+  );
+
   const hasReachedGoal = todaySteps >= goal;
   const remainingSteps = Math.max(0, goal - todaySteps);
   const rawPercent = goal > 0 ? (todaySteps / goal) * 100 : 0;
@@ -75,15 +104,15 @@ export default function HomeScreen() {
             <Text style={styles.appName}>{displayName}</Text>
           </View>
           <View style={styles.headerActions}>
-            <Pressable
+            <AnimatedPressable
               accessibilityLabel="Edit daily step goal"
               accessibilityRole="button"
               onPress={() => setIsGoalModalVisible(true)}
               style={styles.iconButton}
             >
               <Ionicons color={COLORS.text} name="settings-outline" size={24} />
-            </Pressable>
-            <Pressable
+            </AnimatedPressable>
+            <AnimatedPressable
               accessibilityLabel="Sign out"
               accessibilityRole="button"
               onPress={() => {
@@ -92,14 +121,14 @@ export default function HomeScreen() {
               style={styles.iconButton}
             >
               <Ionicons color={COLORS.text} name="log-out-outline" size={23} />
-            </Pressable>
+            </AnimatedPressable>
           </View>
         </View>
 
         <View style={styles.hero}>
-          <ProgressRing goal={goal} steps={todaySteps} />
+          <ProgressRing goal={goal} resetAnimationKey={progressResetKey} steps={todaySteps} />
           <View style={styles.stepBlock}>
-            <Text style={styles.stepCount}>{todaySteps.toLocaleString()}</Text>
+            <AnimatedStepCount replayKey={stepReplayKey} steps={todaySteps} style={styles.stepCount} />
             <Text style={styles.stepLabel}>steps today</Text>
           </View>
           <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
@@ -108,18 +137,18 @@ export default function HomeScreen() {
             {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Waiting for step data</Text>}
           </View>
 
-          <Pressable
+          <AnimatedPressable
             accessibilityLabel="Refresh Google Fit step data"
             accessibilityRole="button"
             disabled={isRefreshing}
             onPress={() => {
-              void refreshSteps();
+              void handleRefreshSteps();
             }}
-            style={({ pressed }) => [styles.refreshButton, pressed ? styles.pressed : null, isRefreshing ? styles.disabled : null]}
+            style={({ pressed }) => [styles.refreshButton, isRefreshing ? styles.refreshing : null, pressed ? styles.pressed : null]}
           >
             {isRefreshing ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="refresh-outline" size={18} />}
             <Text style={styles.refreshButtonText}>{isRefreshing ? 'Refreshing' : 'Refresh steps'}</Text>
-          </Pressable>
+          </AnimatedPressable>
 
           {hasReachedGoal ? (
             <View style={styles.goalBanner}>
@@ -154,6 +183,7 @@ export default function HomeScreen() {
           void handleSaveGoal(nextGoal);
         }}
       />
+      <ToastStack messages={toastMessages} onHide={hideToast} />
     </SafeAreaView>
   );
 }
@@ -166,9 +196,29 @@ type StatCardProps = {
 const StatCard = ({ label, value }: StatCardProps) => (
   <View style={styles.statCard}>
     <Text style={styles.statLabel}>{label}</Text>
-    <Text style={styles.statValue}>{value}</Text>
+    <FormattedStatValue value={value} />
   </View>
 );
+
+type FormattedStatValueProps = {
+  value: string;
+};
+
+const FormattedStatValue = ({ value }: FormattedStatValueProps) => {
+  const match = value.match(/^(\d+)\.(\d+)(%?)$/);
+
+  if (match === null) {
+    return <Text style={styles.statValue}>{value}</Text>;
+  }
+
+  return (
+    <Text style={styles.statValue}>
+      {match[1]}
+      <Text style={styles.statValueDecimal}>{`.${match[2]}`}</Text>
+      <Text style={styles.statValueSuffix}>{match[3]}</Text>
+    </Text>
+  );
+};
 
 const getSourceLabel = (source: StepDataSource): string => {
   if (source === 'apple-health') {
@@ -248,7 +298,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   stepCount: {
-    color: COLORS.text,
+    color: COLORS.action,
     fontSize: 56,
     fontWeight: '900',
   },
@@ -279,7 +329,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.action,
   },
   refreshButtonText: {
     color: COLORS.surface,
@@ -326,6 +376,16 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: '900',
   },
+  statValueDecimal: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  statValueSuffix: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: '900',
+  },
   syncPanel: {
     borderRadius: 8,
     padding: 14,
@@ -358,8 +418,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 18,
   },
-  disabled: {
-    opacity: 0.65,
+  refreshing: {
+    opacity: 0.9,
   },
   pressed: {
     opacity: 0.84,

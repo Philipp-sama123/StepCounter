@@ -9,7 +9,7 @@ import {
   signOut,
   updateProfile,
   User,
-} from 'firebase/auth';
+} from '@firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { firebaseAuth, firestore, isFirebaseConfigured } from '../firebase/config';

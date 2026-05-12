@@ -1,5 +1,15 @@
 # StepCounter
 
+```text
+ /\_/\\          /\_____/\\
+( o.o )        /  o   o  \\
+ > ^ <        ( ==  ^  == )
+               )         (
+              (           )
+              ( (  ) (  ) )
+             (__(__)_(__)__)
+```
+
 A React Native + Expo Router step-tracking app with Firebase auth/sync, Health Connect / Apple Health support, live challenge sessions, local history, animated progress, and sensor debug logging.
 
 ## Features

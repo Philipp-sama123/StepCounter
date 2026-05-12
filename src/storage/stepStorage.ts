@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { DEFAULT_GOAL, LAST_SEVEN_DAYS, ONE_DAY_MS, STEP_HISTORY_KEY_PREFIX, CHALLENGE_SESSION_KEY_PREFIX, STORAGE_KEYS } from '../constants';
+import { StepDataSource } from '../health/types';
 
 export type StepHistoryEntry = {
   date: string;
@@ -135,6 +136,7 @@ export type ChallengeSession = {
   endedAt: string;
   steps: number;
   durationMs: number;
+  source?: StepDataSource;
 };
 
 export const getChallengeKey = (date: string): string => `${CHALLENGE_SESSION_KEY_PREFIX}${date}`;
@@ -160,4 +162,21 @@ export const readChallengeSessions = async (date: string): Promise<ChallengeSess
     console.warn(`Unable to read challenge sessions for ${date}.`, error);
     return [];
   }
+};
+
+export const readRecentChallengeSessions = async (): Promise<Array<ChallengeSession & { date: string }>> => {
+  const today = new Date(getTodayString());
+  const dates = Array.from({ length: LAST_SEVEN_DAYS }, (_, index) => {
+    const date = new Date(today.getTime() - (LAST_SEVEN_DAYS - 1 - index) * ONE_DAY_MS);
+    return toLocalDateString(date);
+  });
+
+  const sessionsByDate = await Promise.all(dates.map(async (date) => ({
+    date,
+    sessions: await readChallengeSessions(date),
+  })));
+
+  return sessionsByDate
+    .flatMap(({ date, sessions }) => sessions.map((session) => ({ ...session, date })))
+    .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
 };

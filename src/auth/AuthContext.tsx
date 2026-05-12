@@ -48,7 +48,7 @@ const upsertUserProfile = async (user: User): Promise<void> => {
       { merge: true },
     );
   } catch (error) {
-    console.warn('Unable to sync Firebase user profile.', error);
+    console.warn('Unable to sync Firebase user profile.', { userId: user.uid, error });
   }
 };
 

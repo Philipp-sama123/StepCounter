@@ -13,10 +13,10 @@ import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
-import { syncDailySteps } from '../src/firebase/stepsSync';
+import { syncChallengeSession, syncDailySteps } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { getTodayString, readGoal, saveGoal, readStepsForDate, saveStepsForDate, saveChallengeSession } from '../src/storage/stepStorage';
+import { getTodayString, readGoal, saveGoal, saveChallengeSession } from '../src/storage/stepStorage';
 
 export default function ChallengeScreen() {
     const {
@@ -39,8 +39,10 @@ export default function ChallengeScreen() {
     const [challengeStartAt, setChallengeStartAt] = useState<number | null>(null);
     const [progressResetKey, setProgressResetKey] = useState(0);
     const [stepReplayKey, setStepReplayKey] = useState(0);
+    const [sessionClock, setSessionClock] = useState(Date.now());
     const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
     const [sessionToastMessages, setSessionToastMessages] = useState<ToastMessageItem[]>([]);
+    const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
     const sessionOpacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
@@ -84,7 +86,11 @@ export default function ChallengeScreen() {
     };
 
     const showSessionToast = (message: string): void => {
-        setSessionToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+        setSessionToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant: 'standard' }]);
+    };
+
+    const showServerToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
+        setServerToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
     };
 
     const hideToast = (id: number): void => {
@@ -93,6 +99,10 @@ export default function ChallengeScreen() {
 
     const hideSessionToast = (id: number): void => {
         setSessionToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
+    };
+
+    const hideServerToast = (id: number): void => {
+        setServerToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
     };
 
     useEffect(() => {
@@ -123,6 +133,20 @@ export default function ChallengeScreen() {
         };
     }, [isChallengeActive, sessionOpacity]);
 
+    useEffect(() => {
+        if (!isChallengeActive) {
+            return undefined;
+        }
+
+        const timer = setInterval(() => {
+            setSessionClock(Date.now());
+        }, 1000);
+
+        return () => {
+            clearInterval(timer);
+        };
+    }, [isChallengeActive]);
+
     useFocusEffect(
         useCallback(() => {
             setProgressResetKey((currentKey) => currentKey + 1);
@@ -134,6 +158,9 @@ export default function ChallengeScreen() {
     const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
 
     const currentChallengeDelta = challengeStartSteps !== null ? Math.max(0, todaySteps - challengeStartSteps) : 0;
+    const sessionDurationMs = isChallengeActive && challengeStartAt !== null ? Math.max(0, sessionClock - challengeStartAt) : 0;
+    const sessionMinutes = Math.max(1, sessionDurationMs / 60000);
+    const sessionPace = isChallengeActive ? Math.round(currentChallengeDelta / sessionMinutes) : 0;
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -232,7 +259,9 @@ export default function ChallengeScreen() {
                                 if (!isChallengeActive) {
                                     setIsChallengeActive(true);
                                     setChallengeStartSteps(todaySteps);
-                                    setChallengeStartAt(Date.now());
+                                    const startedAt = Date.now();
+                                    setChallengeStartAt(startedAt);
+                                    setSessionClock(startedAt);
                                     return;
                                 }
 
@@ -246,18 +275,29 @@ export default function ChallengeScreen() {
                                 if (delta > 0) {
                                     const today = getTodayString();
                                     try {
-                                        const existing = await readStepsForDate(today);
-                                        const newTotal = existing + delta;
-                                        await saveStepsForDate(today, newTotal);
-                                        await saveChallengeSession(today, {
+                                        const session = {
                                             startedAt: new Date(startAt).toISOString(),
                                             endedAt: new Date(endAt).toISOString(),
                                             steps: delta,
                                             durationMs: endAt - startAt,
-                                        });
+                                            source,
+                                        };
+                                        await saveChallengeSession(today, session);
+                                        if (user !== null) {
+                                            const result = await syncChallengeSession({
+                                                date: today,
+                                                session,
+                                                source,
+                                                userId: user.uid,
+                                            });
+                                            if (!result.ok) {
+                                                showServerToast(result.message, 'error');
+                                            }
+                                        }
                                         showSessionToast(`+${delta.toLocaleString()} session steps added`);
                                     } catch (error) {
                                         console.warn('Unable to save challenge session', error);
+                                        showServerToast('Challenge session did not save.', 'error');
                                     }
                                 } else {
                                     showSessionToast('No session steps added');
@@ -288,6 +328,27 @@ export default function ChallengeScreen() {
                         <View style={styles.sensorSummaryItem}>
                             <Text style={styles.sensorSummaryLabel}>Session</Text>
                             <Text style={styles.sensorSummaryValue}>{currentChallengeDelta.toLocaleString()}</Text>
+                        </View>
+                        <View style={styles.sensorSummaryItem}>
+                            <Text style={styles.sensorSummaryLabel}>Pace</Text>
+                            <Text style={styles.sensorSummaryValue}>{`${sessionPace.toLocaleString()}/min`}</Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.challengeDetailPanel}>
+                        <View style={styles.challengeDetailItem}>
+                            <Ionicons color={COLORS.challenge} name="timer-outline" size={18} />
+                            <View>
+                                <Text style={styles.challengeDetailLabel}>Duration</Text>
+                                <Text style={styles.challengeDetailValue}>{formatDuration(sessionDurationMs)}</Text>
+                            </View>
+                        </View>
+                        <View style={styles.challengeDetailItem}>
+                            <Ionicons color={COLORS.action} name="flag-outline" size={18} />
+                            <View>
+                                <Text style={styles.challengeDetailLabel}>Daily total</Text>
+                                <Text style={styles.challengeDetailValue}>{todaySteps.toLocaleString()}</Text>
+                            </View>
                         </View>
                     </View>
 
@@ -322,6 +383,7 @@ export default function ChallengeScreen() {
             />
             <ToastStack messages={toastMessages} onHide={hideToast} />
             <ToastStack messages={sessionToastMessages} onHide={hideSessionToast} placement="bottom" />
+            <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
         </SafeAreaView>
     );
 }
@@ -347,6 +409,13 @@ const formatLogTime = (timestamp: string): string => new Date(timestamp).toLocal
     minute: '2-digit',
     second: '2-digit',
 });
+
+const formatDuration = (durationMs: number): string => {
+    const totalSeconds = Math.floor(durationMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+};
 
 const styles = StyleSheet.create({
     safeArea: {
@@ -514,6 +583,32 @@ const styles = StyleSheet.create({
         color: COLORS.text,
         fontSize: 16,
         fontWeight: '800',
+    },
+    challengeDetailPanel: {
+        backgroundColor: COLORS.surface,
+        borderColor: COLORS.border,
+        borderRadius: 8,
+        borderWidth: 1,
+        flexDirection: 'row',
+        gap: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 14,
+    },
+    challengeDetailItem: {
+        alignItems: 'center',
+        flex: 1,
+        flexDirection: 'row',
+        gap: 10,
+    },
+    challengeDetailLabel: {
+        color: COLORS.mutedText,
+        fontSize: 12,
+        fontWeight: '800',
+    },
+    challengeDetailValue: {
+        color: COLORS.text,
+        fontSize: 15,
+        fontWeight: '900',
     },
     sensorConsole: {
         backgroundColor: '#08110D',

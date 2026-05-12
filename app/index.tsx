@@ -9,14 +9,35 @@ import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
 import { GoalModal } from '../src/components/GoalModal';
+import { ProfileModal } from '../src/components/ProfileModal';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
+import { WeightTrendChart } from '../src/components/WeightTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
-import { syncDailySteps } from '../src/firebase/stepsSync';
+import {
+  getDailyChallengeStats,
+  readDailyStepsFromFirestore,
+  syncDailySteps,
+} from '../src/firebase/stepsSync';
+import {
+  readBodyProfileFromFirestore,
+  readWeightEntriesFromFirestore,
+  syncBodyProfile,
+  syncWeightEntry,
+} from '../src/firebase/profileSync';
 import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { getTodayString, readGoal, saveGoal } from '../src/storage/stepStorage';
+import {
+  getLocalDateString,
+  readBodyProfile,
+  readRecentWeightEntries,
+  saveBodyProfile,
+  saveWeightEntry,
+  UserBodyProfile,
+  WeightEntry,
+} from '../src/storage/profileStorage';
+import { getTodayString, readChallengeSessions, readGoal, saveGoal } from '../src/storage/stepStorage';
 
 export default function HomeScreen() {
   const {
@@ -33,9 +54,14 @@ export default function HomeScreen() {
   const { signOutUser, user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
+  const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const [progressResetKey, setProgressResetKey] = useState(0);
   const [stepReplayKey, setStepReplayKey] = useState(0);
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
+  const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
+  const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
+  const [bodyProfile, setBodyProfile] = useState<UserBodyProfile | null>(null);
+  const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([]);
 
   useEffect(() => {
     const loadGoal = async (): Promise<void> => {
@@ -45,6 +71,44 @@ export default function HomeScreen() {
 
     void loadGoal();
   }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProfile = async (): Promise<void> => {
+      const [localProfile, localWeights] = await Promise.all([
+        readBodyProfile(),
+        readRecentWeightEntries(),
+      ]);
+      const [remoteProfile, remoteWeights] = user === null
+        ? [null, []]
+        : await Promise.all([
+          readBodyProfileFromFirestore(user.uid),
+          readWeightEntriesFromFirestore(user.uid),
+        ]);
+
+      if (!isActive) {
+        return;
+      }
+
+      const nextProfile = remoteProfile ?? localProfile;
+      const nextWeights = mergeWeightEntries(localWeights, remoteWeights);
+      setBodyProfile(nextProfile);
+      setWeightEntries(nextWeights);
+
+      if (remoteProfile !== null) {
+        void saveBodyProfile(remoteProfile);
+      }
+
+      await Promise.all(nextWeights.map(saveWeightEntry));
+    };
+
+    void loadProfile();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (user === null || todaySteps === 0) {
@@ -68,17 +132,88 @@ export default function HomeScreen() {
 
   const handleRefreshSteps = async (): Promise<void> => {
     const message = await refreshSteps();
-    showToast(message);
+    showToast(message, 'success');
     setProgressResetKey((currentKey) => currentKey + 1);
     setStepReplayKey((currentKey) => currentKey + 1);
   };
 
-  const showToast = (message: string): void => {
-    setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+  const handleSaveToFirestore = async (): Promise<void> => {
+    if (user === null) {
+      showServerToast('Sign in before saving to Firestore.', 'error');
+      return;
+    }
+
+    setIsSavingToFirestore(true);
+    const today = getTodayString();
+    const sessions = await readChallengeSessions(today);
+    const challengeStats = getDailyChallengeStats(sessions);
+    const existingDailySteps = await readDailyStepsFromFirestore(user.uid, [today]);
+    const existing = existingDailySteps[today];
+
+    if (existing !== undefined && hasNoDailyStepChanges(existing, {
+      ...challengeStats,
+      goal,
+      source,
+      steps: todaySteps,
+    })) {
+      setIsSavingToFirestore(false);
+      showServerToast('No changes to save.', 'standard');
+      return;
+    }
+
+    const result = await syncDailySteps({
+      ...challengeStats,
+      date: today,
+      goal,
+      source,
+      steps: todaySteps,
+      userId: user.uid,
+    });
+    setIsSavingToFirestore(false);
+    showServerToast(result.message, result.ok ? 'standard' : 'error');
+  };
+
+  const handleSaveProfile = async (profile: UserBodyProfile): Promise<void> => {
+    const today = getLocalDateString(new Date());
+    const shouldWriteWeight = profile.weightTrackingEnabled && profile.currentWeightKg > 0;
+    const nextWeightEntry = { date: today, weightKg: profile.currentWeightKg };
+
+    setBodyProfile(profile);
+    setIsProfileModalVisible(false);
+    await saveBodyProfile(profile);
+
+    if (shouldWriteWeight) {
+      await saveWeightEntry(nextWeightEntry);
+      setWeightEntries((currentEntries) => mergeWeightEntries(currentEntries, [nextWeightEntry]));
+    }
+
+    if (user === null) {
+      showServerToast('Profile saved locally. Sign in to sync it.', 'standard');
+      return;
+    }
+
+    const profileResult = await syncBodyProfile(user.uid, profile);
+    const weightResult = shouldWriteWeight
+      ? await syncWeightEntry(user.uid, nextWeightEntry)
+      : { message: 'Profile saved to Firestore.', ok: true };
+    const ok = profileResult.ok && weightResult.ok;
+    showServerToast(ok ? 'Profile saved to Firestore.' : 'Could not save all profile data.', ok ? 'standard' : 'error');
+  };
+
+  const showToast = (message: string, variant: ToastMessageItem['variant'] = 'success'): void => {
+    setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
+  };
+
+  const showServerToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
+    setServerToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
   };
 
   const hideToast = (id: number): void => {
     setToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
+  };
+
+  const hideServerToast = (id: number): void => {
+    setServerToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
   };
 
   useFocusEffect(
@@ -111,6 +246,14 @@ export default function HomeScreen() {
               style={styles.iconButton}
             >
               <Ionicons color={COLORS.text} name="settings-outline" size={24} />
+            </AnimatedPressable>
+            <AnimatedPressable
+              accessibilityLabel="Open profile"
+              accessibilityRole="button"
+              onPress={() => setIsProfileModalVisible(true)}
+              style={styles.iconButton}
+            >
+              <Ionicons color={COLORS.text} name="person-circle-outline" size={25} />
             </AnimatedPressable>
             <AnimatedPressable
               accessibilityLabel="Sign out"
@@ -150,6 +293,19 @@ export default function HomeScreen() {
             <Text style={styles.refreshButtonText}>{isRefreshing ? 'Refreshing' : 'Refresh steps'}</Text>
           </AnimatedPressable>
 
+          <AnimatedPressable
+            accessibilityLabel="Save current step data to Firestore"
+            accessibilityRole="button"
+            disabled={isSavingToFirestore}
+            onPress={() => {
+              void handleSaveToFirestore();
+            }}
+            style={({ pressed }) => [styles.saveButton, isSavingToFirestore ? styles.refreshing : null, pressed ? styles.pressed : null]}
+          >
+            {isSavingToFirestore ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="server-outline" size={18} />}
+            <Text style={styles.refreshButtonText}>{isSavingToFirestore ? 'Saving' : 'Save to Firestore'}</Text>
+          </AnimatedPressable>
+
           {hasReachedGoal ? (
             <View style={styles.goalBanner}>
               <Text style={styles.goalBannerText}>Daily goal reached. Beautiful work.</Text>
@@ -173,6 +329,8 @@ export default function HomeScreen() {
             <Text style={styles.syncText}>{debugMessage}</Text>
           </View>
         </View>
+
+        <WeightTrendChart entries={weightEntries} profile={bodyProfile} />
       </ScrollView>
 
       <GoalModal
@@ -183,7 +341,16 @@ export default function HomeScreen() {
           void handleSaveGoal(nextGoal);
         }}
       />
+      <ProfileModal
+        isVisible={isProfileModalVisible}
+        onClose={() => setIsProfileModalVisible(false)}
+        onSave={(nextProfile) => {
+          void handleSaveProfile(nextProfile);
+        }}
+        profile={bodyProfile}
+      />
       <ToastStack messages={toastMessages} onHide={hideToast} />
+      <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
     </SafeAreaView>
   );
 }
@@ -245,6 +412,38 @@ const formatSyncTime = (lastSyncedAt: string | null): string => {
     hour: '2-digit',
     minute: '2-digit',
   });
+};
+
+type ExistingDailySteps = Awaited<ReturnType<typeof readDailyStepsFromFirestore>>[string];
+
+type ComparableDailySteps = {
+  challengeSessionCount: number;
+  firstChallengeAt: string | null;
+  goal: number;
+  lastChallengeAt: string | null;
+  paceStepsPerMinute: number;
+  source: StepDataSource;
+  steps: number;
+  walkingTimeMs: number;
+};
+
+const hasNoDailyStepChanges = (existing: ExistingDailySteps, next: ComparableDailySteps): boolean =>
+  existing.steps === Math.max(0, Math.floor(next.steps))
+  && (existing.goal ?? 0) === next.goal
+  && existing.source === next.source
+  && (existing.challengeSessionCount ?? 0) === next.challengeSessionCount
+  && (existing.firstChallengeAt ?? null) === next.firstChallengeAt
+  && (existing.lastChallengeAt ?? null) === next.lastChallengeAt
+  && (existing.paceStepsPerMinute ?? 0) === Math.max(0, Math.floor(next.paceStepsPerMinute))
+  && (existing.walkingTimeMs ?? 0) === Math.max(0, Math.floor(next.walkingTimeMs));
+
+const mergeWeightEntries = (localEntries: WeightEntry[], remoteEntries: WeightEntry[]): WeightEntry[] => {
+  const entriesByDate = new Map<string, WeightEntry>();
+  [...localEntries, ...remoteEntries].forEach((entry) => {
+    entriesByDate.set(entry.date, entry);
+  });
+
+  return Array.from(entriesByDate.values()).sort((left, right) => left.date.localeCompare(right.date));
 };
 
 const styles = StyleSheet.create({
@@ -330,6 +529,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     backgroundColor: COLORS.action,
+  },
+  saveButton: {
+    minHeight: 48,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: COLORS.stopped,
   },
   refreshButtonText: {
     color: COLORS.surface,

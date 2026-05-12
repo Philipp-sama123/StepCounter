@@ -6,19 +6,20 @@ import { COLORS } from '../constants';
 export type ToastMessageItem = {
   id: number;
   message: string;
+  variant?: 'error' | 'standard' | 'success';
 };
 
 type ToastStackProps = {
   messages: ToastMessageItem[];
   onHide: (id: number) => void;
-  placement?: 'bottom' | 'top';
+  placement?: 'bottom' | 'center' | 'top';
 };
 
 type ToastItemProps = {
   index: number;
   item: ToastMessageItem;
   onHide: (id: number) => void;
-  placement: 'bottom' | 'top';
+  placement: 'bottom' | 'center' | 'top';
 };
 
 export const ToastStack = ({ messages, onHide, placement = 'top' }: ToastStackProps) => (
@@ -30,11 +31,11 @@ export const ToastStack = ({ messages, onHide, placement = 'top' }: ToastStackPr
 );
 
 const ToastItem = ({ index, item, onHide, placement }: ToastItemProps) => {
-  const translateY = useRef(new Animated.Value(placement === 'top' ? -28 : 28)).current;
+  const translateY = useRef(new Animated.Value(getInitialOffset(placement))).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    translateY.setValue(placement === 'top' ? -28 : 28);
+    translateY.setValue(getInitialOffset(placement));
     opacity.setValue(0);
 
     Animated.parallel([
@@ -55,7 +56,7 @@ const ToastItem = ({ index, item, onHide, placement }: ToastItemProps) => {
       Animated.parallel([
         Animated.timing(translateY, {
           duration: 220,
-          toValue: placement === 'top' ? -28 : 28,
+          toValue: getInitialOffset(placement),
           useNativeDriver: true,
         }),
         Animated.timing(opacity, {
@@ -71,13 +72,37 @@ const ToastItem = ({ index, item, onHide, placement }: ToastItemProps) => {
     };
   }, [item.id, onHide, opacity, placement, translateY]);
 
-  const stackPosition = placement === 'top' ? { top: 12 + index * 62 } : { bottom: 18 + index * 62 };
+  const stackPosition = getStackPosition(placement, index);
 
   return (
-    <Animated.View style={[styles.toast, stackPosition, { opacity, transform: [{ translateY }] }]}>
+    <Animated.View style={[styles.toast, styles[item.variant ?? 'success'], stackPosition, { opacity, transform: [{ translateY }] }]}>
       <Text style={styles.text}>{item.message}</Text>
     </Animated.View>
   );
+};
+
+const getInitialOffset = (placement: 'bottom' | 'center' | 'top'): number => {
+  if (placement === 'top') {
+    return -28;
+  }
+
+  if (placement === 'bottom') {
+    return 28;
+  }
+
+  return 0;
+};
+
+const getStackPosition = (placement: 'bottom' | 'center' | 'top', index: number) => {
+  if (placement === 'top') {
+    return { top: 12 + index * 62 };
+  }
+
+  if (placement === 'bottom') {
+    return { bottom: 18 + index * 62 };
+  }
+
+  return { top: '44%' as const, marginTop: index * 62 };
 };
 
 const styles = StyleSheet.create({
@@ -91,12 +116,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     justifyContent: 'center',
-    backgroundColor: COLORS.action,
     shadowColor: COLORS.text,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 18,
     elevation: 8,
+  },
+  error: {
+    backgroundColor: COLORS.danger,
+  },
+  standard: {
+    backgroundColor: COLORS.stopped,
+  },
+  success: {
+    backgroundColor: COLORS.action,
   },
   text: {
     color: COLORS.surface,

@@ -1,8 +1,8 @@
 # StepCounter
 
 ```text
- /\_/\\          /\_____/\\
-( o.o )        /  o   o  \\
+ /\_/\          /\_____/\
+( o.o )        /  o   o  \
  > ^ <        ( ==  ^  == )
                )         (
               (           )
@@ -10,61 +10,46 @@
              (__(__)_(__)__)
 ```
 
-A React Native + Expo Router step-tracking app with Firebase auth/sync, Health Connect / Apple Health support, live challenge sessions, local history, animated progress, and sensor debug logging.
+StepCounter is a personal walking companion for tracking daily steps, live challenges, and progress over time. It combines system health data with live sensor sessions, then turns the numbers into a clean mobile dashboard with animated progress, history graphs, challenge logs, and profile stats.
 
-## Features
+The app is built for people who want more than a raw step total. You can refresh your daily steps, start short walking challenges, see pace and session history, save your progress to your account, and keep a simple body profile with BMI and optional weight tracking.
 
-- Email/password login, registration, logout, and password reset.
-- Firebase Auth + Firestore user step sync.
-- Combined, Google Data, Challenge, and History screens.
-- Health Connect / Apple Health system step totals.
-- Live Expo pedometer tracking for Challenge mode.
-- Challenge session steps, session result toast, and last 5 sensor-event log.
-- Animated progress ring, step counter, stacked top toasts, and bottom session toasts.
+## What It Does
 
-## Setup
+- Shows today’s steps with an animated progress ring and goal status.
+- Reads step totals from Health Connect / Google Fit-compatible data on Android, Apple Health on iOS where available, and live sensor data during challenges.
+- Lets you start and stop challenge sessions with session steps, pace, duration, source, and a small live sensor console.
+- Saves daily totals, walking stats, challenge sessions, profile data, and weight history to Firestore for the signed-in user.
+- Includes email login, registration, logout, and persistent sessions.
+- Provides history views for steps, pace, challenge sessions, BMI, and weight tracking.
+- Uses stacked toast messages for refresh, sync, success, and error feedback.
+
+## Run It
 
 ```bash
 npm install
 cp .env.example .env
-```
-
-Fill `.env` with your Firebase values. `.env` is ignored by Git.
-
-Required:
-
-```bash
-EXPO_PUBLIC_FIREBASE_API_KEY=
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-EXPO_PUBLIC_FIREBASE_APP_ID=
-```
-
-Enable Firebase Authentication Email/Password and deploy the included `firestore.rules` before using real user data.
-
-## Run
-
-```bash
 npm start
+```
+
+Fill `.env` with your Firebase project values before logging in or syncing data. `.env` is ignored by Git.
+
+For real Health Connect / HealthKit data, use a native build or development client:
+
+```bash
 npm run android
 npm run ios
 ```
 
-Health Connect / HealthKit need a native build or dev client. Expo Go is not enough for those modules.
+Expo Go is useful for quick UI work, but native health modules need a real native build.
 
-After native/env changes:
+## Firebase
+
+Enable Firebase Authentication with email/password, add your Firebase web config to `.env`, and deploy the included Firestore rules:
 
 ```bash
-npx expo start -c
+npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
 ```
-
-## Notes if you wanna improve the code with AI: 
-
-- Expo's live pedometer event only exposes `steps`; the Challenge console logs timestamp, raw step count, delta, and app total.
-- Keep `.env`, keystores, private keys, and provisioning files out of Git.
-- Type-check with `npx tsc --noEmit`.
 
 ## License
 

@@ -69,6 +69,13 @@ const RootNavigator = () => {
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="calendar-outline" size={size} />,
         }}
       />
+      <Tabs.Screen
+        name="challenge-history"
+        options={{
+          title: 'Sessions',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="list-outline" size={size} />,
+        }}
+      />
     </Tabs>
   );
 };

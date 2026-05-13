@@ -15,7 +15,8 @@ import {
   StoredChallengeSession,
   syncLocalStepDataToFirestore,
 } from '../src/firebase/stepsSync';
-import { readGoal, readLastSevenDays, readChallengeSessions, readRecentChallengeSessions, StepHistoryEntry } from '../src/storage/stepStorage';
+import { readStepsForDateFromSystemHealth } from '../src/health/stepsProvider';
+import { readGoal, readLastSevenDays, readChallengeSessions, readRecentChallengeSessions, saveStepsForDate, StepHistoryEntry } from '../src/storage/stepStorage';
 
 export default function HistoryScreen() {
   const { user } = useAuth();
@@ -55,25 +56,16 @@ export default function HistoryScreen() {
           localSessionsByDate[entries[idx].date] = arr;
         });
 
-        if (user !== null) {
-          void syncLocalStepDataToFirestore({
-            entries,
-            goal: storedGoal,
-            localSessionsByDate,
-            userId: user.uid,
-          });
-        }
-
         const dates = entries.map((entry) => entry.date);
-        const [remoteDailySteps, remoteSessionSums] = user === null
-          ? [{}, {}]
-          : await Promise.all([
-            readDailyStepsFromFirestore(user.uid, dates),
-            readChallengeSessionSumsFromFirestore(user.uid, dates),
-          ]);
+        const [remoteDailySteps, remoteSessionSums, systemDailySteps] = await Promise.all([
+          user === null ? Promise.resolve({} as Awaited<ReturnType<typeof readDailyStepsFromFirestore>>) : readDailyStepsFromFirestore(user.uid, dates),
+          user === null ? Promise.resolve({} as Record<string, number>) : readChallengeSessionSumsFromFirestore(user.uid, dates),
+          readSystemStepsByDate(dates),
+        ]);
 
         const hasRemoteDailyData = Object.keys(remoteDailySteps).length > 0;
         const hasRemoteSessionData = Object.keys(remoteSessionSums).length > 0;
+        const hasSystemDailyData = Object.keys(systemDailySteps).length > 0;
         const sums = mergeMaximumByDate(localSessionSums, remoteSessionSums);
         const paces = entries.reduce<Record<string, number>>((result, entry) => {
           result[entry.date] = Math.max(localPaces[entry.date] ?? 0, remoteDailySteps[entry.date]?.paceStepsPerMinute ?? 0);
@@ -81,13 +73,24 @@ export default function HistoryScreen() {
         }, {});
 
         const rawSums = entries.reduce<Record<string, number>>((result, entry) => {
-          result[entry.date] = Math.max(entry.steps, remoteDailySteps[entry.date]?.steps ?? 0);
+          result[entry.date] = Math.max(entry.steps, remoteDailySteps[entry.date]?.steps ?? 0, systemDailySteps[entry.date] ?? 0);
           return result;
         }, {});
         const correctedEntries = entries.map((entry) => ({
           ...entry,
-          steps: Math.max(entry.steps, remoteDailySteps[entry.date]?.steps ?? 0, sums[entry.date] ?? 0),
+          steps: Math.max(entry.steps, remoteDailySteps[entry.date]?.steps ?? 0, systemDailySteps[entry.date] ?? 0, sums[entry.date] ?? 0),
         }));
+
+        await Promise.all(Object.entries(systemDailySteps).map(([date, steps]) => saveStepsForDate(date, steps)));
+
+        if (user !== null) {
+          void syncLocalStepDataToFirestore({
+            entries: correctedEntries,
+            goal: storedGoal,
+            localSessionsByDate,
+            userId: user.uid,
+          });
+        }
 
         if (isActive) {
           setHistory(correctedEntries);
@@ -95,7 +98,7 @@ export default function HistoryScreen() {
           setSessionSums(sums);
           setRawStepSums(rawSums);
           setPaceByDate(paces);
-          setDataSourceLabel(hasRemoteDailyData || hasRemoteSessionData ? 'Firestore + local cache' : 'Local cache');
+          setDataSourceLabel(getDataSourceLabel({ hasRemoteDailyData, hasRemoteSessionData, hasSystemDailyData }));
         }
       };
 
@@ -393,6 +396,45 @@ const getMostRecentRemoteGoal = (remoteDailySteps: Awaited<ReturnType<typeof rea
   const dates = Object.keys(remoteDailySteps).sort();
   const latestDateWithGoal = [...dates].reverse().find((date) => typeof remoteDailySteps[date].goal === 'number');
   return latestDateWithGoal === undefined ? null : (remoteDailySteps[latestDateWithGoal].goal ?? null);
+};
+
+const readSystemStepsByDate = async (dates: string[]): Promise<Record<string, number>> => {
+  const results = await Promise.all(dates.map(async (date) => ({
+    date,
+    result: await readStepsForDateFromSystemHealth(date),
+  })));
+
+  return results.reduce<Record<string, number>>((stepsByDate, { date, result }) => {
+    if (result.available && result.steps > 0) {
+      stepsByDate[date] = result.steps;
+    }
+
+    return stepsByDate;
+  }, {});
+};
+
+const getDataSourceLabel = ({
+  hasRemoteDailyData,
+  hasRemoteSessionData,
+  hasSystemDailyData,
+}: {
+  hasRemoteDailyData: boolean;
+  hasRemoteSessionData: boolean;
+  hasSystemDailyData: boolean;
+}): string => {
+  if (hasSystemDailyData && (hasRemoteDailyData || hasRemoteSessionData)) {
+    return 'System health + Firestore + local cache';
+  }
+
+  if (hasSystemDailyData) {
+    return 'System health + local cache';
+  }
+
+  if (hasRemoteDailyData || hasRemoteSessionData) {
+    return 'Firestore + local cache';
+  }
+
+  return 'Local cache';
 };
 
 const mergeSessions = (

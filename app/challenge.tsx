@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Accelerometer, DeviceMotion, Gyroscope, Magnetometer } from 'expo-sensors';
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
@@ -26,6 +27,20 @@ import {
     saveChallengeSession,
     saveDailyChallengeGoal,
 } from '../src/storage/stepStorage';
+
+type AccelerometerSample = {
+    magnitude: number;
+    timestamp: string;
+    x: number;
+    y: number;
+    z: number;
+};
+
+type GenericSensorSample = {
+    headline: string;
+    line: string;
+    timestamp: string;
+};
 
 export default function ChallengeScreen() {
     const {
@@ -57,6 +72,14 @@ export default function ChallengeScreen() {
     const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
     const [sessionToastMessages, setSessionToastMessages] = useState<ToastMessageItem[]>([]);
     const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
+    const [accelerometerAvailable, setAccelerometerAvailable] = useState<boolean | null>(null);
+    const [accelerometerLog, setAccelerometerLog] = useState<AccelerometerSample[]>([]);
+    const [gyroscopeAvailable, setGyroscopeAvailable] = useState<boolean | null>(null);
+    const [gyroscopeLog, setGyroscopeLog] = useState<GenericSensorSample[]>([]);
+    const [deviceMotionAvailable, setDeviceMotionAvailable] = useState<boolean | null>(null);
+    const [deviceMotionLog, setDeviceMotionLog] = useState<GenericSensorSample[]>([]);
+    const [magnetometerAvailable, setMagnetometerAvailable] = useState<boolean | null>(null);
+    const [magnetometerLog, setMagnetometerLog] = useState<GenericSensorSample[]>([]);
     const sessionOpacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
@@ -175,6 +198,146 @@ export default function ChallengeScreen() {
         };
     }, [isChallengeActive]);
 
+    useEffect(() => {
+        let isMounted = true;
+        let subscription: ReturnType<typeof Accelerometer.addListener> | null = null;
+
+        const startAccelerometer = async (): Promise<void> => {
+            try {
+                const available = await Accelerometer.isAvailableAsync();
+                if (!isMounted) {
+                    return;
+                }
+
+                setAccelerometerAvailable(available);
+                if (!available) {
+                    return;
+                }
+
+                Accelerometer.setUpdateInterval(650);
+                subscription = Accelerometer.addListener(({ x, y, z }) => {
+                    const sample = {
+                        magnitude: getAccelerationMagnitude(x, y, z),
+                        timestamp: new Date().toISOString(),
+                        x,
+                        y,
+                        z,
+                    };
+                    setAccelerometerLog((currentLog) => [sample, ...currentLog].slice(0, 120));
+                });
+            } catch (error) {
+                console.warn('Unable to read accelerometer data.', error);
+                if (isMounted) {
+                    setAccelerometerAvailable(false);
+                }
+            }
+        };
+
+        void startAccelerometer();
+
+        return () => {
+            isMounted = false;
+            subscription?.remove();
+        };
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        let gyroscopeSubscription: ReturnType<typeof Gyroscope.addListener> | null = null;
+        let deviceMotionSubscription: ReturnType<typeof DeviceMotion.addListener> | null = null;
+        let magnetometerSubscription: ReturnType<typeof Magnetometer.addListener> | null = null;
+
+        const startMotionSensors = async (): Promise<void> => {
+            try {
+                const [hasGyroscope, hasDeviceMotion, hasMagnetometer] = await Promise.all([
+                    Gyroscope.isAvailableAsync(),
+                    DeviceMotion.isAvailableAsync(),
+                    Magnetometer.isAvailableAsync(),
+                ]);
+
+                if (!isMounted) {
+                    return;
+                }
+
+                setGyroscopeAvailable(hasGyroscope);
+                setDeviceMotionAvailable(hasDeviceMotion);
+                setMagnetometerAvailable(hasMagnetometer);
+
+                if (hasGyroscope) {
+                    Gyroscope.setUpdateInterval(650);
+                    gyroscopeSubscription = Gyroscope.addListener(({ x, y, z }) => {
+                        const magnitude = getVectorMagnitude(x, y, z);
+                        setGyroscopeLog((currentLog) => [
+                            {
+                                headline: `${formatAxis(magnitude)} rad/s`,
+                                line: `x ${formatAxis(x)}  y ${formatAxis(y)}  z ${formatAxis(z)}`,
+                                timestamp: new Date().toISOString(),
+                            },
+                            ...currentLog,
+                        ].slice(0, 120));
+                    });
+                }
+
+                if (hasDeviceMotion) {
+                    DeviceMotion.setUpdateInterval(650);
+                    deviceMotionSubscription = DeviceMotion.addListener((measurement) => {
+                        const acceleration = getMotionVector(measurement.acceleration)
+                            ?? getMotionVector(measurement.accelerationIncludingGravity);
+                        if (acceleration === null) {
+                            return;
+                        }
+
+                        const rotationRate = getRotationRate(measurement.rotationRate);
+                        const accelerationMagnitude = getVectorMagnitude(acceleration.x, acceleration.y, acceleration.z);
+                        const rotationText = rotationRate === null
+                            ? 'rot unavailable'
+                            : `rot ${formatAxis(rotationRate.alpha)}/${formatAxis(rotationRate.beta)}/${formatAxis(rotationRate.gamma)} deg/s`;
+
+                        setDeviceMotionLog((currentLog) => [
+                            {
+                                headline: `${formatAxis(accelerationMagnitude)} m/s2`,
+                                line: `acc ${formatAxis(acceleration.x)}/${formatAxis(acceleration.y)}/${formatAxis(acceleration.z)}  ${rotationText}`,
+                                timestamp: new Date().toISOString(),
+                            },
+                            ...currentLog,
+                        ].slice(0, 120));
+                    });
+                }
+
+                if (hasMagnetometer) {
+                    Magnetometer.setUpdateInterval(650);
+                    magnetometerSubscription = Magnetometer.addListener(({ x, y, z }) => {
+                        const magnitude = getVectorMagnitude(x, y, z);
+                        setMagnetometerLog((currentLog) => [
+                            {
+                                headline: `${formatAxis(magnitude)} uT`,
+                                line: `x ${formatAxis(x)}  y ${formatAxis(y)}  z ${formatAxis(z)}`,
+                                timestamp: new Date().toISOString(),
+                            },
+                            ...currentLog,
+                        ].slice(0, 120));
+                    });
+                }
+            } catch (error) {
+                console.warn('Unable to read motion sensor data.', error);
+                if (isMounted) {
+                    setGyroscopeAvailable(false);
+                    setDeviceMotionAvailable(false);
+                    setMagnetometerAvailable(false);
+                }
+            }
+        };
+
+        void startMotionSensors();
+
+        return () => {
+            isMounted = false;
+            gyroscopeSubscription?.remove();
+            deviceMotionSubscription?.remove();
+            magnetometerSubscription?.remove();
+        };
+    }, []);
+
     useFocusEffect(
         useCallback(() => {
             const loadTodayChallengeSteps = async (): Promise<void> => {
@@ -200,6 +363,14 @@ export default function ChallengeScreen() {
     const sessionPace = isChallengeActive ? Math.round(currentChallengeDelta / sessionMinutes) : 0;
     const challengeGoalPercent = currentChallengeGoal > 0 ? Math.min(100, (currentChallengeDelta / currentChallengeGoal) * 100) : 0;
     const dailyChallengeGoalPercent = dailyChallengeGoal > 0 ? Math.min(100, (idleChallengeSteps / dailyChallengeGoal) * 100) : 0;
+    const rollingAverages = getRollingAverages({
+        accelerometerLog,
+        deviceMotionLog,
+        gyroscopeLog,
+        magnetometerLog,
+        nowMs: sessionClock,
+        sensorLog,
+    });
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -409,6 +580,22 @@ export default function ChallengeScreen() {
                 </View>
 
                 <View style={styles.sensorSection}>
+                    {isChallengeActive ? (
+                        <View style={styles.averagePanel}>
+                            <View style={styles.averageHeader}>
+                                <Text style={styles.averageTitle}>Last minute averages</Text>
+                                <Text style={styles.averageMeta}>rolling 60s</Text>
+                            </View>
+                            <View style={styles.averageGrid}>
+                                <AverageMetric label="Steps" suffix="/min" value={rollingAverages.stepsPerMinute} />
+                                <AverageMetric label="Accel" suffix="g" value={rollingAverages.accelerometerMagnitude} />
+                                <AverageMetric label="Gyro" suffix="rad/s" value={rollingAverages.gyroscopeMagnitude} />
+                                <AverageMetric label="Motion" suffix="m/s2" value={rollingAverages.deviceMotionMagnitude} />
+                                <AverageMetric label="Mag" suffix="uT" value={rollingAverages.magnetometerMagnitude} />
+                            </View>
+                        </View>
+                    ) : null}
+
                     <View style={styles.sensorSummary}>
                         <View style={styles.sensorSummaryItem}>
                             <Text style={styles.sensorSummaryLabel}>Source</Text>
@@ -454,20 +641,121 @@ export default function ChallengeScreen() {
 
                     <View style={styles.sensorConsole}>
                         <View style={styles.consoleHeader}>
-                            <Text style={styles.consoleTitle}>Live sensor log</Text>
+                            <Text style={styles.consoleTitle}>Pedometer log</Text>
                             <Text style={styles.consoleMeta}>last 10</Text>
                         </View>
+                        <SensorExplanation
+                            description="Live step events from the phone pedometer. Use it to check whether the challenge is receiving fresh movement data."
+                            items={[
+                                { label: 'Raw', text: 'The cumulative value reported by the device sensor.' },
+                                { label: 'Delta', text: 'New steps added since the previous event.' },
+                                { label: 'Total', text: 'Challenge steps counted during this live session.' },
+                                { label: 'Use', text: 'Best quick check for whether challenge steps are being counted live.' },
+                            ]}
+                        />
                         {sensorLog.length > 0 ? (
-                            sensorLog.map((entry) => (
-                                <View key={`${entry.timestamp}-${entry.rawSteps}`} style={styles.consoleRow}>
-                                    <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
-                                    <Text style={styles.consoleLine}>{`raw ${entry.rawSteps.toLocaleString()}  +${entry.delta.toLocaleString()}  total ${entry.totalSteps.toLocaleString()}`}</Text>
+                            <>
+                                <View style={styles.sensorCurrent}>
+                                    <Text style={styles.sensorCurrentValue}>
+                                        {sensorLog[0].totalSteps.toLocaleString()}
+                                    </Text>
+                                    <Text style={styles.sensorCurrentLabel}>current session total</Text>
                                 </View>
-                            ))
+                                <View style={styles.consoleLogBox}>
+                                    {sensorLog.slice(0, 10).map((entry, index) => (
+                                        <View key={`${entry.timestamp}-${entry.rawSteps}-${index}`} style={styles.consoleRow}>
+                                            <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
+                                            <Text style={styles.consoleLine}>{`raw ${entry.rawSteps.toLocaleString()}  +${entry.delta.toLocaleString()}  total ${entry.totalSteps.toLocaleString()}`}</Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            </>
                         ) : (
-                            <Text style={styles.consoleEmpty}>waiting for live pedometer events...</Text>
+                            <View style={styles.consoleLogBox}>
+                                <Text style={styles.consoleEmpty}>waiting for live pedometer events...</Text>
+                            </View>
                         )}
                     </View>
+
+                    <View style={styles.sensorConsole}>
+                        <View style={styles.consoleHeader}>
+                            <Text style={styles.consoleTitle}>Accelerometer</Text>
+                            <Text style={styles.consoleMeta}>{accelerometerAvailable === false ? 'unavailable' : 'live'}</Text>
+                        </View>
+                        <SensorExplanation
+                            description="Linear movement on the x, y, and z axes. It helps show shake, stride impact, and how much the phone is moving during a challenge."
+                            items={[
+                                { label: 'x/y/z', text: 'Movement along the phone axes.' },
+                                { label: 'g', text: 'Gravity units: 1g is roughly Earth gravity, about 9.81 m/s2.' },
+                                { label: 'Magnitude', text: 'Combined movement strength across all three axes.' },
+                                { label: 'Use', text: 'Useful for stride impact, shaking, phone placement, and movement intensity.' },
+                            ]}
+                        />
+                        {accelerometerLog.length > 0 ? (
+                            <>
+                                <View style={styles.sensorCurrent}>
+                                    <Text style={styles.sensorCurrentValue}>{formatAcceleration(accelerometerLog[0].magnitude)}</Text>
+                                    <Text style={styles.sensorCurrentLabel}>movement magnitude</Text>
+                                </View>
+                                <View style={styles.consoleLogBox}>
+                                    {accelerometerLog.slice(0, 10).map((entry, index) => (
+                                        <View key={`${entry.timestamp}-${index}`} style={styles.consoleRow}>
+                                            <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
+                                            <Text style={styles.consoleLine}>
+                                                {`x ${formatAxis(entry.x)}  y ${formatAxis(entry.y)}  z ${formatAxis(entry.z)}  m ${formatAcceleration(entry.magnitude)}`}
+                                            </Text>
+                                        </View>
+                                    ))}
+                                </View>
+                            </>
+                        ) : (
+                            <View style={styles.consoleLogBox}>
+                                <Text style={styles.consoleEmpty}>
+                                    {accelerometerAvailable === false ? 'accelerometer unavailable on this device' : 'waiting for accelerometer events...'}
+                                </Text>
+                            </View>
+                        )}
+                    </View>
+
+                    <SensorConsole
+                        available={gyroscopeAvailable}
+                        description="Rotation speed around the phone axes. Useful for spotting arm swings, turns, and phone rotation while moving."
+                        log={gyroscopeLog}
+                        metrics={[
+                            { label: 'x/y/z', text: 'Rotation speed around each phone axis.' },
+                            { label: 'rad/s', text: 'Radians per second: how fast the phone is rotating.' },
+                            { label: 'Magnitude', text: 'Combined rotation strength across all three axes.' },
+                            { label: 'Use', text: 'Useful for arm swing, turns, and whether the phone is rotating while walking.' },
+                        ]}
+                        title="Gyroscope"
+                        unitLabel="rotation magnitude"
+                    />
+                    <SensorConsole
+                        available={deviceMotionAvailable}
+                        description="A combined motion feed. It blends acceleration and rotation, which is useful for seeing richer movement patterns than steps alone."
+                        log={deviceMotionLog}
+                        metrics={[
+                            { label: 'acc', text: 'Acceleration on x, y, and z axes.' },
+                            { label: 'm/s2', text: 'Meters per second squared: physical acceleration strength.' },
+                            { label: 'rot', text: 'Rotation rate alpha, beta, gamma in degrees per second when available.' },
+                            { label: 'Use', text: 'Useful for richer movement quality, combining impact and rotation.' },
+                        ]}
+                        title="Device motion"
+                        unitLabel="acceleration magnitude"
+                    />
+                    <SensorConsole
+                        available={magnetometerAvailable}
+                        description="Magnetic field readings around the phone. Mostly useful for orientation context, not direct step counting."
+                        log={magnetometerLog}
+                        metrics={[
+                            { label: 'x/y/z', text: 'Magnetic field strength on each phone axis.' },
+                            { label: 'uT', text: 'Microtesla: the unit used for magnetic field strength.' },
+                            { label: 'Magnitude', text: 'Combined magnetic field strength across all three axes.' },
+                            { label: 'Use', text: 'Useful for orientation context and detecting magnetic interference.' },
+                        ]}
+                        title="Magnetometer"
+                        unitLabel="magnetic field"
+                    />
 
                     <Text style={styles.sensorHint}>{debugMessage}</Text>
                 </View>
@@ -525,6 +813,255 @@ const formatDuration = (durationMs: number): string => {
 
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+
+const getAccelerationMagnitude = (x: number, y: number, z: number): number =>
+    Math.sqrt(x * x + y * y + z * z);
+
+type MotionVector = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+type RotationRate = {
+    alpha: number;
+    beta: number;
+    gamma: number;
+};
+
+const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
+
+const getMotionVector = (value: unknown): MotionVector | null => {
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+
+    const vector = value as Partial<MotionVector>;
+    if (!isFiniteNumber(vector.x) || !isFiniteNumber(vector.y) || !isFiniteNumber(vector.z)) {
+        return null;
+    }
+
+    return {
+        x: vector.x,
+        y: vector.y,
+        z: vector.z,
+    };
+};
+
+const getRotationRate = (value: unknown): RotationRate | null => {
+    if (typeof value !== 'object' || value === null) {
+        return null;
+    }
+
+    const rotation = value as Partial<RotationRate>;
+    if (!isFiniteNumber(rotation.alpha) || !isFiniteNumber(rotation.beta) || !isFiniteNumber(rotation.gamma)) {
+        return null;
+    }
+
+    return {
+        alpha: rotation.alpha,
+        beta: rotation.beta,
+        gamma: rotation.gamma,
+    };
+};
+
+const getVectorMagnitude = (x: number, y: number, z: number): number =>
+    Math.sqrt(x * x + y * y + z * z);
+
+const formatAxis = (value: number): string => value.toFixed(2);
+
+const formatAcceleration = (value: number): string => `${value.toFixed(2)}g`;
+
+type RollingAverageInput = {
+    accelerometerLog: AccelerometerSample[];
+    deviceMotionLog: GenericSensorSample[];
+    gyroscopeLog: GenericSensorSample[];
+    magnetometerLog: GenericSensorSample[];
+    nowMs: number;
+    sensorLog: Array<{ delta: number; timestamp: string }>;
+};
+
+type RollingAverages = {
+    accelerometerMagnitude: number;
+    deviceMotionMagnitude: number;
+    gyroscopeMagnitude: number;
+    magnetometerMagnitude: number;
+    stepsPerMinute: number;
+};
+
+const getRollingAverages = ({
+    accelerometerLog,
+    deviceMotionLog,
+    gyroscopeLog,
+    magnetometerLog,
+    nowMs,
+    sensorLog,
+}: RollingAverageInput): RollingAverages => {
+    const cutoffMs = nowMs - 60000;
+    const recentStepEvents = sensorLog.filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs);
+    const stepsPerMinute = recentStepEvents.reduce((total, entry) => total + Math.max(0, entry.delta), 0);
+
+    return {
+        accelerometerMagnitude: averageNumbers(accelerometerLog
+            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
+            .map((entry) => entry.magnitude)),
+        deviceMotionMagnitude: averageNumbers(deviceMotionLog
+            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
+            .map((entry) => parseLeadingNumber(entry.headline))),
+        gyroscopeMagnitude: averageNumbers(gyroscopeLog
+            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
+            .map((entry) => parseLeadingNumber(entry.headline))),
+        magnetometerMagnitude: averageNumbers(magnetometerLog
+            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
+            .map((entry) => parseLeadingNumber(entry.headline))),
+        stepsPerMinute,
+    };
+};
+
+const averageNumbers = (values: number[]): number => {
+    const safeValues = values.filter(Number.isFinite);
+    if (safeValues.length === 0) {
+        return 0;
+    }
+
+    return safeValues.reduce((total, value) => total + value, 0) / safeValues.length;
+};
+
+const parseLeadingNumber = (value: string): number => {
+    const parsed = Number(value.split(' ')[0]);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+type AverageMetricProps = {
+    label: string;
+    suffix: string;
+    value: number;
+};
+
+const AverageMetric = ({ label, suffix, value }: AverageMetricProps) => (
+    <View style={styles.averageMetric}>
+        <Text style={styles.averageMetricLabel}>{label}</Text>
+        <View style={styles.averageValueRow}>
+            <AnimatedMetricNumber value={value} style={styles.averageMetricValue} />
+            <Text style={styles.averageMetricSuffix}>{suffix}</Text>
+        </View>
+    </View>
+);
+
+type AnimatedMetricNumberProps = {
+    style: TextStyle;
+    value: number;
+};
+
+const AnimatedMetricNumber = ({ style, value }: AnimatedMetricNumberProps) => {
+    const animatedValue = useRef(new Animated.Value(value)).current;
+    const [displayValue, setDisplayValue] = useState(value);
+    const bounceScale = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+        const listenerId = animatedValue.addListener(({ value: nextValue }) => {
+            setDisplayValue(nextValue);
+        });
+
+        return () => {
+            animatedValue.removeListener(listenerId);
+        };
+    }, [animatedValue]);
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(animatedValue, {
+                duration: 520,
+                toValue: value,
+                useNativeDriver: false,
+            }),
+            Animated.sequence([
+                Animated.spring(bounceScale, {
+                    friction: 5,
+                    tension: 160,
+                    toValue: 1.08,
+                    useNativeDriver: true,
+                }),
+                Animated.spring(bounceScale, {
+                    friction: 6,
+                    tension: 150,
+                    toValue: 1,
+                    useNativeDriver: true,
+                }),
+            ]),
+        ]).start();
+    }, [animatedValue, bounceScale, value]);
+
+    return (
+        <Animated.Text style={[style, { transform: [{ scale: bounceScale }] }]}>
+            {displayValue >= 100 ? Math.round(displayValue).toLocaleString() : displayValue.toFixed(2)}
+        </Animated.Text>
+    );
+};
+
+type SensorConsoleProps = {
+    available: boolean | null;
+    description: string;
+    log: GenericSensorSample[];
+    metrics: SensorExplanationItem[];
+    title: string;
+    unitLabel: string;
+};
+
+type SensorExplanationItem = {
+    label: string;
+    text: string;
+};
+
+type SensorExplanationProps = {
+    description: string;
+    items: SensorExplanationItem[];
+};
+
+const SensorExplanation = ({ description, items }: SensorExplanationProps) => (
+    <View style={styles.sensorExplanation}>
+        <Text style={styles.sensorDescription}>{description}</Text>
+        {items.map((item) => (
+            <View key={item.label} style={styles.sensorExplanationRow}>
+                <Text style={styles.sensorExplanationLabel}>{item.label}</Text>
+                <Text style={styles.sensorExplanationText}>{item.text}</Text>
+            </View>
+        ))}
+    </View>
+);
+
+const SensorConsole = ({ available, description, log, metrics, title, unitLabel }: SensorConsoleProps) => (
+    <View style={styles.sensorConsole}>
+        <View style={styles.consoleHeader}>
+            <Text style={styles.consoleTitle}>{title}</Text>
+            <Text style={styles.consoleMeta}>{available === false ? 'unavailable' : 'last 10'}</Text>
+        </View>
+        <SensorExplanation description={description} items={metrics} />
+        {log.length > 0 ? (
+            <>
+                <View style={styles.sensorCurrent}>
+                    <Text style={styles.sensorCurrentValue}>{log[0].headline}</Text>
+                    <Text style={styles.sensorCurrentLabel}>{unitLabel}</Text>
+                </View>
+                <View style={styles.consoleLogBox}>
+                    {log.slice(0, 10).map((entry, index) => (
+                        <View key={`${entry.timestamp}-${index}`} style={styles.consoleRow}>
+                            <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
+                            <Text style={styles.consoleLine}>{entry.line}</Text>
+                        </View>
+                    ))}
+                </View>
+            </>
+        ) : (
+            <View style={styles.consoleLogBox}>
+                <Text style={styles.consoleEmpty}>
+                    {available === false ? `${title.toLowerCase()} unavailable on this device` : `waiting for ${title.toLowerCase()} events...`}
+                </Text>
+            </View>
+        )}
+    </View>
+);
 
 const styles = StyleSheet.create({
     safeArea: {
@@ -687,6 +1224,67 @@ const styles = StyleSheet.create({
         gap: 12,
         marginBottom: 28,
     },
+    averagePanel: {
+        backgroundColor: COLORS.challengeSoft,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: 12,
+        padding: 14,
+    },
+    averageHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    averageTitle: {
+        color: COLORS.challenge,
+        fontSize: 15,
+        fontWeight: '900',
+    },
+    averageMeta: {
+        color: COLORS.challenge,
+        fontSize: 11,
+        fontWeight: '800',
+    },
+    averageGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    averageMetric: {
+        backgroundColor: COLORS.surface,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        minHeight: 76,
+        paddingHorizontal: 10,
+        paddingVertical: 10,
+        width: '31%',
+    },
+    averageMetricLabel: {
+        color: COLORS.mutedText,
+        fontSize: 11,
+        fontWeight: '900',
+        marginBottom: 6,
+    },
+    averageValueRow: {
+        alignItems: 'flex-end',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 4,
+    },
+    averageMetricValue: {
+        color: COLORS.challenge,
+        fontSize: 18,
+        fontWeight: '900',
+    },
+    averageMetricSuffix: {
+        color: COLORS.challenge,
+        fontSize: 10,
+        fontWeight: '800',
+        paddingBottom: 2,
+    },
     sensorSummary: {
         flexDirection: 'row',
         gap: 12,
@@ -743,32 +1341,34 @@ const styles = StyleSheet.create({
         fontWeight: '900',
     },
     sensorConsole: {
+        borderTopColor: COLORS.border,
+        borderTopWidth: 1,
+        paddingTop: 18,
+    },
+    consoleHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    consoleTitle: {
+        color: COLORS.text,
+        fontSize: 15,
+        fontWeight: '900',
+    },
+    consoleMeta: {
+        color: COLORS.challenge,
+        fontSize: 12,
+        fontWeight: '800',
+    },
+    consoleLogBox: {
         backgroundColor: '#08110D',
         borderColor: '#173528',
         borderRadius: 8,
         borderWidth: 1,
-        minHeight: 158,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-    },
-    consoleHeader: {
-        alignItems: 'center',
-        borderBottomColor: '#173528',
-        borderBottomWidth: 1,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 10,
-        paddingBottom: 8,
-    },
-    consoleTitle: {
-        color: '#E8FFF2',
-        fontSize: 13,
-        fontWeight: '900',
-    },
-    consoleMeta: {
-        color: '#7CE7A8',
-        fontSize: 12,
-        fontWeight: '800',
+        minHeight: 44,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
     },
     consoleRow: {
         flexDirection: 'row',
@@ -791,6 +1391,54 @@ const styles = StyleSheet.create({
         color: '#7CE7A8',
         fontFamily: 'monospace',
         fontSize: 12,
+    },
+    sensorExplanation: {
+        gap: 7,
+        marginBottom: 12,
+    },
+    sensorDescription: {
+        color: COLORS.text,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
+    },
+    sensorExplanationRow: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    sensorExplanationLabel: {
+        color: COLORS.challenge,
+        fontSize: 11,
+        fontWeight: '900',
+        minWidth: 68,
+    },
+    sensorExplanationText: {
+        color: COLORS.mutedText,
+        flex: 1,
+        fontSize: 11,
+        fontWeight: '700',
+        lineHeight: 15,
+    },
+    sensorCurrent: {
+        alignItems: 'center',
+        backgroundColor: COLORS.challengeSoft,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        marginBottom: 10,
+        paddingVertical: 10,
+    },
+    sensorCurrentValue: {
+        color: COLORS.challenge,
+        fontFamily: 'monospace',
+        fontSize: 22,
+        fontWeight: '900',
+    },
+    sensorCurrentLabel: {
+        color: COLORS.challenge,
+        fontSize: 11,
+        fontWeight: '800',
+        marginTop: 2,
     },
     sensorHint: {
         color: COLORS.mutedText,

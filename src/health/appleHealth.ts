@@ -2,13 +2,34 @@ import { Platform } from 'react-native';
 
 import { SystemStepResult } from './types';
 
-const getStartOfToday = (): Date => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
+const getStartOfToday = (): Date => getStartOfLocalDate(new Date());
+
+const getStartOfLocalDate = (date: Date): Date => {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  return start;
+};
+
+const getLocalDateRange = (dateString: string): { end: Date; start: Date } => {
+  const [year, month, day] = dateString.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
+  const nextDay = new Date(start);
+  nextDay.setDate(start.getDate() + 1);
+  const todayStart = getStartOfToday();
+
+  return {
+    end: start.getTime() === todayStart.getTime() ? new Date() : nextDay,
+    start,
+  };
 };
 
 export const readTodayStepsFromAppleHealth = async (): Promise<SystemStepResult> => {
+  const today = getStartOfToday();
+  const dateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  return readStepsForDateFromAppleHealth(dateString);
+};
+
+export const readStepsForDateFromAppleHealth = async (dateString: string): Promise<SystemStepResult> => {
   if (Platform.OS !== 'ios') {
     return {
       available: false,
@@ -41,14 +62,15 @@ export const readTodayStepsFromAppleHealth = async (): Promise<SystemStepResult>
       };
     }
 
+    const { end, start } = getLocalDateRange(dateString);
     const result = await healthKit.queryStatisticsForQuantity(
       'HKQuantityTypeIdentifierStepCount',
       ['cumulativeSum'],
       {
         filter: {
           date: {
-            startDate: getStartOfToday(),
-            endDate: new Date(),
+            startDate: start,
+            endDate: end,
           },
         },
         unit: 'count',

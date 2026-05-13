@@ -68,7 +68,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
   };
 
   const addSensorLogEntry = (entry: StepSensorLogEntry): void => {
-    setSensorLog((currentLog) => [entry, ...currentLog].slice(0, 10));
+    setSensorLog((currentLog) => [entry, ...currentLog].slice(0, 120));
   };
 
   const scheduleStoppedStatus = (): void => {

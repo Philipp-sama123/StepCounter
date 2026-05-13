@@ -14,12 +14,21 @@ import { COLORS, MAX_GOAL, MIN_GOAL } from '../constants';
 
 type GoalModalProps = {
   currentGoal: number;
+  helperText?: string;
   isVisible: boolean;
   onClose: () => void;
   onSave: (goal: number) => void;
+  title?: string;
 };
 
-export const GoalModal = ({ currentGoal, isVisible, onClose, onSave }: GoalModalProps) => {
+export const GoalModal = ({
+  currentGoal,
+  helperText = 'Choose a goal from 1 to 100000 steps.',
+  isVisible,
+  onClose,
+  onSave,
+  title = 'Daily goal',
+}: GoalModalProps) => {
   const [value, setValue] = useState(String(currentGoal));
 
   useEffect(() => {
@@ -41,7 +50,7 @@ export const GoalModal = ({ currentGoal, isVisible, onClose, onSave }: GoalModal
     <Modal animationType="fade" transparent visible={isVisible} onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlay}>
         <View style={styles.dialog}>
-          <Text style={styles.title}>Daily goal</Text>
+          <Text style={styles.title}>{title}</Text>
           <TextInput
             keyboardType="number-pad"
             maxLength={6}
@@ -51,7 +60,7 @@ export const GoalModal = ({ currentGoal, isVisible, onClose, onSave }: GoalModal
             style={styles.input}
             value={value}
           />
-          <Text style={styles.helper}>Choose a goal from 1 to 100000 steps.</Text>
+          <Text style={styles.helper}>{helperText}</Text>
           <View style={styles.actions}>
             <Pressable accessibilityRole="button" onPress={onClose} style={[styles.button, styles.secondaryButton]}>
               <Text style={styles.secondaryButtonText}>Cancel</Text>

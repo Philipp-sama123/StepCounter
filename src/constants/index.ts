@@ -2,6 +2,8 @@ export const DEFAULT_GOAL = 10000;
 
 export const STORAGE_KEYS = {
   baseline: 'baseline',
+  challengeGoal: 'challengeGoal',
+  dailyChallengeGoal: 'dailyChallengeGoal',
   goal: 'goal',
   lastDate: 'lastDate',
 } as const;

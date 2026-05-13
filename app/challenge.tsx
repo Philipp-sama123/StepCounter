@@ -16,7 +16,16 @@ import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncChallengeSession, syncDailySteps } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { getTodayString, readGoal, saveGoal, saveChallengeSession } from '../src/storage/stepStorage';
+import {
+    getTodayString,
+    readChallengeGoal,
+    readChallengeSessions,
+    readDailyChallengeGoal,
+    readGoal,
+    saveChallengeGoal,
+    saveChallengeSession,
+    saveDailyChallengeGoal,
+} from '../src/storage/stepStorage';
 
 export default function ChallengeScreen() {
     const {
@@ -33,8 +42,13 @@ export default function ChallengeScreen() {
     } = useStepCounter('live');
     const { signOutUser, user } = useAuth();
     const [goal, setGoal] = useState(DEFAULT_GOAL);
+    const [challengeGoal, setChallengeGoal] = useState(DEFAULT_GOAL);
+    const [dailyChallengeGoal, setDailyChallengeGoal] = useState(DEFAULT_GOAL);
+    const [todayChallengeSteps, setTodayChallengeSteps] = useState(0);
+    const [goalModalMode, setGoalModalMode] = useState<'daily-challenge' | 'session-challenge'>('session-challenge');
     const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
     const [isChallengeActive, setIsChallengeActive] = useState(false);
+    const [activeChallengeGoal, setActiveChallengeGoal] = useState<number | null>(null);
     const [challengeStartSteps, setChallengeStartSteps] = useState<number | null>(null);
     const [challengeStartAt, setChallengeStartAt] = useState<number | null>(null);
     const [progressResetKey, setProgressResetKey] = useState(0);
@@ -47,8 +61,16 @@ export default function ChallengeScreen() {
 
     useEffect(() => {
         const loadGoal = async (): Promise<void> => {
-            const storedGoal = await readGoal();
+            const [storedGoal, storedChallengeGoal, storedDailyChallengeGoal, todaySessions] = await Promise.all([
+                readGoal(),
+                readChallengeGoal(),
+                readDailyChallengeGoal(),
+                readChallengeSessions(getTodayString()),
+            ]);
             setGoal(storedGoal);
+            setChallengeGoal(storedChallengeGoal);
+            setDailyChallengeGoal(storedDailyChallengeGoal);
+            setTodayChallengeSteps(sumSessionSteps(todaySessions));
         };
 
         void loadGoal();
@@ -69,9 +91,15 @@ export default function ChallengeScreen() {
     }, [goal, source, todaySteps, user]);
 
     const handleSaveGoal = async (nextGoal: number): Promise<void> => {
-        setGoal(nextGoal);
+        if (goalModalMode === 'daily-challenge') {
+            setDailyChallengeGoal(nextGoal);
+            await saveDailyChallengeGoal(nextGoal);
+        } else {
+            setChallengeGoal(nextGoal);
+            await saveChallengeGoal(nextGoal);
+        }
+
         setIsGoalModalVisible(false);
-        await saveGoal(nextGoal);
     };
 
     const handleRefreshSteps = async (): Promise<void> => {
@@ -149,6 +177,11 @@ export default function ChallengeScreen() {
 
     useFocusEffect(
         useCallback(() => {
+            const loadTodayChallengeSteps = async (): Promise<void> => {
+                setTodayChallengeSteps(sumSessionSteps(await readChallengeSessions(getTodayString())));
+            };
+
+            void loadTodayChallengeSteps();
             setProgressResetKey((currentKey) => currentKey + 1);
             setStepReplayKey((currentKey) => currentKey + 1);
         }, []),
@@ -158,9 +191,15 @@ export default function ChallengeScreen() {
     const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
 
     const currentChallengeDelta = challengeStartSteps !== null ? Math.max(0, todaySteps - challengeStartSteps) : 0;
+    const currentChallengeGoal = activeChallengeGoal ?? challengeGoal;
+    const idleChallengeSteps = todayChallengeSteps;
+    const ringSteps = isChallengeActive ? currentChallengeDelta : idleChallengeSteps;
+    const ringGoal = isChallengeActive ? currentChallengeGoal : dailyChallengeGoal;
     const sessionDurationMs = isChallengeActive && challengeStartAt !== null ? Math.max(0, sessionClock - challengeStartAt) : 0;
     const sessionMinutes = Math.max(1, sessionDurationMs / 60000);
     const sessionPace = isChallengeActive ? Math.round(currentChallengeDelta / sessionMinutes) : 0;
+    const challengeGoalPercent = currentChallengeGoal > 0 ? Math.min(100, (currentChallengeDelta / currentChallengeGoal) * 100) : 0;
+    const dailyChallengeGoalPercent = dailyChallengeGoal > 0 ? Math.min(100, (idleChallengeSteps / dailyChallengeGoal) * 100) : 0;
 
     return (
         <SafeAreaView style={styles.safeArea}>
@@ -173,9 +212,12 @@ export default function ChallengeScreen() {
                     </View>
                     <View style={styles.headerActions}>
                         <AnimatedPressable
-                            accessibilityLabel="Edit daily step goal"
+                            accessibilityLabel="Edit challenge goal"
                             accessibilityRole="button"
-                            onPress={() => setIsGoalModalVisible(true)}
+                            onPress={() => {
+                                setGoalModalMode('session-challenge');
+                                setIsGoalModalVisible(true);
+                            }}
                             style={styles.iconButton}
                         >
                             <Ionicons color={COLORS.text} name="settings-outline" size={24} />
@@ -194,7 +236,14 @@ export default function ChallengeScreen() {
                 </View>
 
                 <View style={styles.hero}>
-                    <ProgressRing goal={goal} resetAnimationKey={progressResetKey} steps={isAvailable ? todaySteps : 0} />
+                    <ProgressRing
+                        caption={isChallengeActive ? 'of challenge goal' : 'of daily challenge goal'}
+                        completeColor={COLORS.challenge}
+                        goal={ringGoal}
+                        progressColor={COLORS.challenge}
+                        resetAnimationKey={progressResetKey}
+                        steps={ringSteps}
+                    />
                     <View style={styles.stepBlock}>
                         {isChallengeActive ? (
                             <Animated.View style={[styles.sessionStepsPanel, { opacity: sessionOpacity }]}>
@@ -203,12 +252,43 @@ export default function ChallengeScreen() {
                             </Animated.View>
                         ) : (
                             <>
-                                <AnimatedStepCount replayKey={stepReplayKey} steps={isAvailable ? todaySteps : 0} style={styles.stepCount} />
-                                <Text style={styles.stepLabel}>steps today</Text>
+                                <AnimatedStepCount replayKey={stepReplayKey} steps={idleChallengeSteps} style={styles.stepCount} />
+                                <Text style={styles.stepLabel}>challenge steps today</Text>
                             </>
                         )}
                     </View>
-                    <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
+                    <Text style={styles.goalText}>
+                        {isChallengeActive
+                            ? `Challenge goal ${currentChallengeGoal.toLocaleString()}`
+                            : `Daily challenge goal ${dailyChallengeGoal.toLocaleString()} · Session goal ${challengeGoal.toLocaleString()}`}
+                    </Text>
+
+                    {!isChallengeActive ? (
+                        <View style={styles.goalButtons}>
+                            <AnimatedPressable
+                                accessibilityLabel="Edit daily challenge goal"
+                                accessibilityRole="button"
+                                onPress={() => {
+                                    setGoalModalMode('daily-challenge');
+                                    setIsGoalModalVisible(true);
+                                }}
+                                style={styles.goalPill}
+                            >
+                                <Text style={styles.goalPillText}>Daily goal</Text>
+                            </AnimatedPressable>
+                            <AnimatedPressable
+                                accessibilityLabel="Edit session challenge goal"
+                                accessibilityRole="button"
+                                onPress={() => {
+                                    setGoalModalMode('session-challenge');
+                                    setIsGoalModalVisible(true);
+                                }}
+                                style={styles.goalPill}
+                            >
+                                <Text style={styles.goalPillText}>Session goal</Text>
+                            </AnimatedPressable>
+                        </View>
+                    ) : null}
 
                     <View style={styles.statusRow}>
                         <StatusBadge attention={isChallengeActive} status={status} />
@@ -257,11 +337,14 @@ export default function ChallengeScreen() {
                             accessibilityRole="button"
                             onPress={async () => {
                                 if (!isChallengeActive) {
+                                    setActiveChallengeGoal(challengeGoal);
                                     setIsChallengeActive(true);
                                     setChallengeStartSteps(todaySteps);
                                     const startedAt = Date.now();
                                     setChallengeStartAt(startedAt);
                                     setSessionClock(startedAt);
+                                    setProgressResetKey((currentKey) => currentKey + 1);
+                                    setStepReplayKey((currentKey) => currentKey + 1);
                                     return;
                                 }
 
@@ -270,6 +353,7 @@ export default function ChallengeScreen() {
                                 const endAt = Date.now();
                                 const startAt = challengeStartAt ?? endAt;
                                 const startSteps = challengeStartSteps ?? todaySteps;
+                                const sessionChallengeGoal = activeChallengeGoal ?? challengeGoal;
                                 const delta = Math.max(0, todaySteps - startSteps);
 
                                 if (delta > 0) {
@@ -278,11 +362,13 @@ export default function ChallengeScreen() {
                                         const session = {
                                             startedAt: new Date(startAt).toISOString(),
                                             endedAt: new Date(endAt).toISOString(),
+                                            challengeGoal: sessionChallengeGoal,
                                             steps: delta,
                                             durationMs: endAt - startAt,
                                             source,
                                         };
                                         await saveChallengeSession(today, session);
+                                        setTodayChallengeSteps((currentSteps) => currentSteps + delta);
                                         if (user !== null) {
                                             const result = await syncChallengeSession({
                                                 date: today,
@@ -305,6 +391,9 @@ export default function ChallengeScreen() {
 
                                 setChallengeStartSteps(null);
                                 setChallengeStartAt(null);
+                                setActiveChallengeGoal(null);
+                                setProgressResetKey((currentKey) => currentKey + 1);
+                                setStepReplayKey((currentKey) => currentKey + 1);
                             }}
                             style={[
                                 styles.challengeButton,
@@ -344,10 +433,21 @@ export default function ChallengeScreen() {
                             </View>
                         </View>
                         <View style={styles.challengeDetailItem}>
-                            <Ionicons color={COLORS.action} name="flag-outline" size={18} />
+                            <Ionicons color={COLORS.challenge} name="flag-outline" size={18} />
                             <View>
-                                <Text style={styles.challengeDetailLabel}>Daily total</Text>
-                                <Text style={styles.challengeDetailValue}>{todaySteps.toLocaleString()}</Text>
+                                <Text style={styles.challengeDetailLabel}>{isChallengeActive ? 'Challenge goal' : 'Daily challenge'}</Text>
+                                <Text style={styles.challengeDetailValueOrange}>
+                                    {`${(isChallengeActive ? challengeGoalPercent : dailyChallengeGoalPercent).toFixed(1)}%`}
+                                </Text>
+                            </View>
+                        </View>
+                        <View style={styles.challengeDetailItem}>
+                            <Ionicons color={COLORS.challenge} name="walk-outline" size={18} />
+                            <View>
+                                <Text style={styles.challengeDetailLabel}>{isChallengeActive ? 'Goal steps' : 'Daily goal'}</Text>
+                                <Text style={styles.challengeDetailValueOrange}>
+                                    {isChallengeActive ? currentChallengeGoal.toLocaleString() : dailyChallengeGoal.toLocaleString()}
+                                </Text>
                             </View>
                         </View>
                     </View>
@@ -355,7 +455,7 @@ export default function ChallengeScreen() {
                     <View style={styles.sensorConsole}>
                         <View style={styles.consoleHeader}>
                             <Text style={styles.consoleTitle}>Live sensor log</Text>
-                            <Text style={styles.consoleMeta}>last 5</Text>
+                            <Text style={styles.consoleMeta}>last 10</Text>
                         </View>
                         {sensorLog.length > 0 ? (
                             sensorLog.map((entry) => (
@@ -374,12 +474,18 @@ export default function ChallengeScreen() {
             </ScrollView>
 
             <GoalModal
-                currentGoal={goal}
+                currentGoal={goalModalMode === 'daily-challenge' ? dailyChallengeGoal : challengeGoal}
+                helperText={
+                    goalModalMode === 'daily-challenge'
+                        ? 'Choose how many challenge-session steps you want to collect today.'
+                        : 'Choose a target for each individual challenge session.'
+                }
                 isVisible={isGoalModalVisible}
                 onClose={() => setIsGoalModalVisible(false)}
                 onSave={(nextGoal) => {
                     void handleSaveGoal(nextGoal);
                 }}
+                title={goalModalMode === 'daily-challenge' ? 'Daily challenge goal' : 'Session challenge goal'}
             />
             <ToastStack messages={toastMessages} onHide={hideToast} />
             <ToastStack messages={sessionToastMessages} onHide={hideSessionToast} placement="bottom" />
@@ -416,6 +522,9 @@ const formatDuration = (durationMs: number): string => {
     const seconds = totalSeconds % 60;
     return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
+
+const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
+    sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
 
 const styles = StyleSheet.create({
     safeArea: {
@@ -496,6 +605,24 @@ const styles = StyleSheet.create({
         color: COLORS.text,
         fontSize: 14,
         marginBottom: 16,
+    },
+    goalButtons: {
+        flexDirection: 'row',
+        gap: 8,
+        marginBottom: 14,
+    },
+    goalPill: {
+        backgroundColor: COLORS.challengeSoft,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    goalPillText: {
+        color: COLORS.challenge,
+        fontSize: 12,
+        fontWeight: '900',
     },
     statusRow: {
         marginBottom: 16,
@@ -607,6 +734,11 @@ const styles = StyleSheet.create({
     },
     challengeDetailValue: {
         color: COLORS.text,
+        fontSize: 15,
+        fontWeight: '900',
+    },
+    challengeDetailValueOrange: {
+        color: COLORS.challenge,
         fontSize: 15,
         fontWeight: '900',
     },

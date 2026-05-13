@@ -83,6 +83,7 @@ export const syncChallengeSession = async ({ date, session, source, userId }: Sy
       doc(firestore, 'users', userId, 'challengeSessions', getSessionId(date, session.startedAt)),
       {
         date,
+        challengeGoal: typeof session.challengeGoal === 'number' ? Math.max(1, Math.floor(session.challengeGoal)) : null,
         durationMs: Math.max(0, Math.floor(session.durationMs)),
         endedAt: session.endedAt,
         paceStepsPerMinute,
@@ -194,6 +195,7 @@ export const readChallengeSessionsFromFirestore = async (userId: string): Promis
         const startedAt = typeof data.startedAt === 'string' ? data.startedAt : null;
         const endedAt = typeof data.endedAt === 'string' ? data.endedAt : null;
         const durationMs = typeof data.durationMs === 'number' ? data.durationMs : null;
+        const challengeGoal = typeof data.challengeGoal === 'number' ? data.challengeGoal : undefined;
         const steps = typeof data.steps === 'number' ? data.steps : null;
 
         if (date === null || startedAt === null || endedAt === null || durationMs === null || steps === null) {
@@ -202,6 +204,7 @@ export const readChallengeSessionsFromFirestore = async (userId: string): Promis
 
         return {
           date,
+          challengeGoal,
           durationMs: Math.max(0, Math.floor(durationMs)),
           endedAt,
           source: isStepDataSource(data.source) ? data.source : undefined,

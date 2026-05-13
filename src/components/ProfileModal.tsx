@@ -92,7 +92,7 @@ export const ProfileModal = ({ isVisible, onClose, onSave, profile }: ProfileMod
           <View style={styles.trackingRow}>
             <View style={styles.trackingCopy}>
               <Text style={styles.trackingTitle}>Weight tracking</Text>
-              <Text style={styles.trackingText}>Save one weight entry per day.</Text>
+              <Text style={styles.trackingText}>Save each weight entry with its timestamp.</Text>
             </View>
             <Switch
               onValueChange={setWeightTrackingEnabled}

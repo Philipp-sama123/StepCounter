@@ -101,6 +101,42 @@ export const saveGoal = async (goal: number): Promise<void> => {
   }
 };
 
+export const readChallengeGoal = async (): Promise<number> => {
+  try {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.challengeGoal);
+    return parseStoredNumber(value, DEFAULT_GOAL);
+  } catch (error) {
+    console.warn('Unable to read challenge goal.', error);
+    return DEFAULT_GOAL;
+  }
+};
+
+export const saveChallengeGoal = async (goal: number): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.challengeGoal, String(Math.max(1, Math.floor(goal))));
+  } catch (error) {
+    console.warn('Unable to save challenge goal.', error);
+  }
+};
+
+export const readDailyChallengeGoal = async (): Promise<number> => {
+  try {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.dailyChallengeGoal);
+    return parseStoredNumber(value, DEFAULT_GOAL);
+  } catch (error) {
+    console.warn('Unable to read daily challenge goal.', error);
+    return DEFAULT_GOAL;
+  }
+};
+
+export const saveDailyChallengeGoal = async (goal: number): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.dailyChallengeGoal, String(Math.max(1, Math.floor(goal))));
+  } catch (error) {
+    console.warn('Unable to save daily challenge goal.', error);
+  }
+};
+
 export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => {
   const today = new Date(getTodayString());
   const dates = Array.from({ length: LAST_SEVEN_DAYS }, (_, index) => {
@@ -134,6 +170,7 @@ export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => {
 export type ChallengeSession = {
   startedAt: string;
   endedAt: string;
+  challengeGoal?: number;
   steps: number;
   durationMs: number;
   source?: StepDataSource;

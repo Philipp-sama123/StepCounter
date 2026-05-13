@@ -13,7 +13,7 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
 
-      match /weights/{date} {
+      match /weights/{weightEntryId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }

@@ -6,6 +6,7 @@ import { COLORS } from '../constants';
 import { StepHistoryEntry } from '../storage/stepStorage';
 
 type StepTrendChartProps = {
+  animationKey?: number;
   goal: number;
   history: StepHistoryEntry[];
   metric?: 'pace' | 'steps';
@@ -41,8 +42,9 @@ const createAreaPath = (points: { x: number; y: number }[]): string => {
   return `${createLinePath(points)} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
 };
 
-export const StepTrendChart = ({ goal, history, metric = 'steps', paceByDate = {}, sessionSums = {} }: StepTrendChartProps) => {
+export const StepTrendChart = ({ animationKey = 0, goal, history, metric = 'steps', paceByDate = {}, sessionSums = {} }: StepTrendChartProps) => {
   const entryAnimation = useRef(new Animated.Value(0)).current;
+  const revealAnimation = useRef(new Animated.Value(0)).current;
   const values = history.map((entry) => getEntryValue(entry, metric, paceByDate));
   const maxSteps = Math.max(metric === 'steps' ? goal : 0, ...values, 1);
   const chartRange = Math.max(maxSteps * 1.15, 1);
@@ -61,13 +63,21 @@ export const StepTrendChart = ({ goal, history, metric = 'steps', paceByDate = {
 
   useEffect(() => {
     entryAnimation.setValue(0);
-    Animated.spring(entryAnimation, {
-      friction: 8,
-      tension: 68,
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-  }, [entryAnimation, history.length, metric]);
+    revealAnimation.setValue(0);
+    Animated.parallel([
+      Animated.spring(entryAnimation, {
+        friction: 8,
+        tension: 68,
+        toValue: 1,
+        useNativeDriver: true,
+      }),
+      Animated.timing(revealAnimation, {
+        duration: 760,
+        toValue: 1,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [animationKey, entryAnimation, history.length, metric, revealAnimation]);
 
   const animatedChartStyle = {
     opacity: entryAnimation,
@@ -86,6 +96,12 @@ export const StepTrendChart = ({ goal, history, metric = 'steps', paceByDate = {
       },
     ],
   };
+  const revealStyle = {
+    width: revealAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0, chartWidth],
+    }),
+  };
 
   return (
     <View style={styles.wrapper}>
@@ -100,79 +116,85 @@ export const StepTrendChart = ({ goal, history, metric = 'steps', paceByDate = {
       <View style={styles.chartFrame}>
         <ScrollView contentContainerStyle={styles.scrollContent} horizontal showsHorizontalScrollIndicator={false}>
           <Animated.View style={[styles.chartCanvas, { width: chartWidth }, animatedChartStyle]}>
-            <Svg height={CHART_HEIGHT} viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`} width={chartWidth}>
-              <Defs>
-                <LinearGradient id="stepArea" x1="0" x2="0" y1="0" y2="1">
-                  <Stop offset="0" stopColor={COLORS.action} stopOpacity="0.32" />
-                  <Stop offset="0.62" stopColor={COLORS.primary} stopOpacity="0.14" />
-                  <Stop offset="1" stopColor={COLORS.primary} stopOpacity="0.02" />
-                </LinearGradient>
-              </Defs>
-              {[0.25, 0.5, 0.75].map((ratio) => (
-                <Line
-                  key={ratio}
-                  opacity={0.52}
-                  stroke={COLORS.border}
-                  strokeWidth={1}
-                  x1={HORIZONTAL_PADDING}
-                  x2={chartWidth - HORIZONTAL_PADDING}
-                  y1={TOP_PADDING + plotHeight * ratio}
-                  y2={TOP_PADDING + plotHeight * ratio}
-                />
-              ))}
-              {metric === 'steps' ? (
-                <Line
-                  stroke={COLORS.border}
-                  strokeDasharray="5 7"
-                  strokeWidth={1.5}
-                  x1={HORIZONTAL_PADDING}
-                  x2={chartWidth - HORIZONTAL_PADDING}
-                  y1={goalY}
-                  y2={goalY}
-                />
-              ) : null}
-              {points.map((point, index) => {
-                const entry = history[index];
-                const sessionSteps = sessionSums[entry.date] ?? 0;
-                const height = Math.max(sessionSteps > 0 ? 4 : 0, plotHeight * Math.min(sessionSteps / chartRange, 1));
+            <View style={[styles.svgWindow, { width: chartWidth }]}>
+              <Animated.View style={[styles.revealMask, revealStyle]}>
+                <View style={{ width: chartWidth }}>
+                  <Svg height={CHART_HEIGHT} viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`} width={chartWidth}>
+                    <Defs>
+                      <LinearGradient id="stepArea" x1="0" x2="0" y1="0" y2="1">
+                        <Stop offset="0" stopColor={COLORS.action} stopOpacity="0.32" />
+                        <Stop offset="0.62" stopColor={COLORS.primary} stopOpacity="0.14" />
+                        <Stop offset="1" stopColor={COLORS.primary} stopOpacity="0.02" />
+                      </LinearGradient>
+                    </Defs>
+                    {[0.25, 0.5, 0.75].map((ratio) => (
+                      <Line
+                        key={ratio}
+                        opacity={0.52}
+                        stroke={COLORS.border}
+                        strokeWidth={1}
+                        x1={HORIZONTAL_PADDING}
+                        x2={chartWidth - HORIZONTAL_PADDING}
+                        y1={TOP_PADDING + plotHeight * ratio}
+                        y2={TOP_PADDING + plotHeight * ratio}
+                      />
+                    ))}
+                    {metric === 'steps' ? (
+                      <Line
+                        stroke={COLORS.border}
+                        strokeDasharray="5 7"
+                        strokeWidth={1.5}
+                        x1={HORIZONTAL_PADDING}
+                        x2={chartWidth - HORIZONTAL_PADDING}
+                        y1={goalY}
+                        y2={goalY}
+                      />
+                    ) : null}
+                    {points.map((point, index) => {
+                      const entry = history[index];
+                      const sessionSteps = sessionSums[entry.date] ?? 0;
+                      const height = Math.max(sessionSteps > 0 ? 4 : 0, plotHeight * Math.min(sessionSteps / chartRange, 1));
 
-                if (sessionSteps <= 0) {
-                  return null;
-                }
+                      if (sessionSteps <= 0) {
+                        return null;
+                      }
 
-                return (
-                  <Rect
-                    fill={COLORS.challenge}
-                    key={`${entry.date}-session`}
-                    opacity={0.78}
-                    rx={3}
-                    width={8}
-                    x={point.x - 4}
-                    y={baseline - height}
-                    height={height}
-                  />
-                );
-              })}
-              <Path d={areaPath} fill="url(#stepArea)" />
-              <Path d={linePath} fill="none" opacity={0.16} stroke={COLORS.action} strokeLinecap="round" strokeLinejoin="round" strokeWidth={12} />
-              <Path d={linePath} fill="none" stroke={COLORS.action} strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} />
-              {points.map((point, index) => {
-                const entry = history[index];
-                const reachedGoal = metric === 'steps' && entry.steps >= goal;
+                      return (
+                        <Rect
+                          fill={COLORS.challenge}
+                          key={`${entry.date}-session`}
+                          opacity={0.78}
+                          rx={3}
+                          width={8}
+                          x={point.x - 4}
+                          y={baseline - height}
+                          height={height}
+                        />
+                      );
+                    })}
+                    <Path d={areaPath} fill="url(#stepArea)" />
+                    <Path d={linePath} fill="none" opacity={0.16} stroke={COLORS.action} strokeLinecap="round" strokeLinejoin="round" strokeWidth={12} />
+                    <Path d={linePath} fill="none" stroke={COLORS.action} strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} />
+                    {points.map((point, index) => {
+                      const entry = history[index];
+                      const reachedGoal = metric === 'steps' && entry.steps >= goal;
 
-                return (
-                  <Circle
-                    cx={point.x}
-                    cy={point.y}
-                    fill={reachedGoal ? COLORS.success : COLORS.surface}
-                    key={entry.date}
-                    r={5}
-                    stroke={reachedGoal ? COLORS.success : COLORS.action}
-                    strokeWidth={3}
-                  />
-                );
-              })}
-            </Svg>
+                      return (
+                        <Circle
+                          cx={point.x}
+                          cy={point.y}
+                          fill={reachedGoal ? COLORS.success : COLORS.surface}
+                          key={entry.date}
+                          r={5}
+                          stroke={reachedGoal ? COLORS.success : COLORS.action}
+                          strokeWidth={3}
+                        />
+                      );
+                    })}
+                  </Svg>
+                </View>
+              </Animated.View>
+            </View>
 
             <View style={styles.axis}>
               {history.map((entry) => (
@@ -229,6 +251,12 @@ const styles = StyleSheet.create({
   },
   chartCanvas: {
     gap: 8,
+  },
+  svgWindow: {
+    overflow: 'hidden',
+  },
+  revealMask: {
+    overflow: 'hidden',
   },
   axis: {
     flexDirection: 'row',

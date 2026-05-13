@@ -1,7 +1,7 @@
 # StepCounter
 
 ```text
- /\_/\          /\_____/\
+ /\_/\          /\_____/\ 
 ( o.o )        /  o   o  \
  > ^ <        ( ==  ^  == )
                )         (
@@ -10,19 +10,24 @@
              (__(__)_(__)__)
 ```
 
-StepCounter is a personal walking companion for tracking daily steps, live challenges, and progress over time. It combines system health data with live sensor sessions, then turns the numbers into a clean mobile dashboard with animated progress, history graphs, challenge logs, and profile stats.
+StepCounter is a small walking app for making everyday movement feel a bit more alive. It is not trying to be a giant fitness platform. It shows your steps, lets you run focused walking challenges, and keeps the useful history close enough that you actually want to look at it.
 
-The app is built for people who want more than a raw step total. You can refresh your daily steps, start short walking challenges, see pace and session history, save your progress to your account, and keep a simple body profile with BMI and optional weight tracking.
+The dashboard is the everyday view: today’s steps, progress, health-data source, refresh, and Firestore sync. Challenge mode is for intentional walks. It has its own saved challenge goal, an orange progress ring, pace, duration, challenge goal percentage, and a live sensor console with the last ten readings.
 
-## What It Does
+History is intentionally one place. You can switch between daily totals and challenge sessions, with graphs that animate in instead of just appearing flat on the screen. Profile holds account actions, the daily step goal, height, weight tracking, BMI, and timestamped weight entries. Weight and BMI graphs reveal across the chart and bring entries in point by point.
 
-- Shows today’s steps with an animated progress ring and goal status.
-- Reads step totals from Health Connect / Google Fit-compatible data on Android, Apple Health on iOS where available, and live sensor data during challenges.
-- Lets you start and stop challenge sessions with session steps, pace, duration, source, and a small live sensor console.
-- Saves daily totals, walking stats, challenge sessions, profile data, and weight history to Firestore for the signed-in user.
-- Includes email login, registration, logout, and persistent sessions.
-- Provides history views for steps, pace, challenge sessions, BMI, and weight tracking.
-- Uses stacked toast messages for refresh, sync, success, and error feedback.
+## What Is In The App
+
+- Email login, registration, logout, and persisted auth.
+- Dashboard for today’s steps, source details, refresh, and Firestore save.
+- Challenge sessions with a separate saved challenge goal.
+- Orange challenge progress ring based on challenge steps, not daily total.
+- Live sensor log for the last 10 readings during challenge mode.
+- Unified history screen for totals, pace, and session history.
+- Profile page for daily goal, body profile, BMI, and weight tracking.
+- Timestamped weight entries with animated weight and BMI graphs.
+- Firestore sync for daily steps, challenge sessions, profile data, and weight history.
+- Health Connect / Google Fit-compatible data on Android, Apple Health where available, plus live sensor fallback.
 
 ## Run It
 
@@ -32,20 +37,20 @@ cp .env.example .env
 npm start
 ```
 
-Fill `.env` with your Firebase project values before logging in or syncing data. `.env` is ignored by Git.
+Add your Firebase values to `.env`. That file is ignored by Git.
 
-For real Health Connect / HealthKit data, use a native build or development client:
+For real phone health data, use a native build:
 
 ```bash
 npm run android
 npm run ios
 ```
 
-Expo Go is useful for quick UI work, but native health modules need a real native build.
+Expo Go is useful for UI checks, but Health Connect / HealthKit need the native app or a dev client.
 
 ## Firebase
 
-Enable Firebase Authentication with email/password, add your Firebase web config to `.env`, and deploy the included Firestore rules:
+Enable Email/Password auth in Firebase, then deploy the Firestore rules:
 
 ```bash
 npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID

@@ -37,9 +37,11 @@ export const syncWeightEntry = async (userId: string, entry: WeightEntry): Promi
 
   try {
     await setDoc(
-      doc(firestore, 'users', userId, 'weights', entry.date),
+      doc(firestore, 'users', userId, 'weights', entry.id),
       {
         date: entry.date,
+        id: entry.id,
+        timestamp: entry.timestamp,
         updatedAt: serverTimestamp(),
         weightKg: entry.weightKg,
       },
@@ -91,6 +93,7 @@ export const readWeightEntriesFromFirestore = async (userId: string): Promise<We
       .map((weightDoc): WeightEntry | null => {
         const data = weightDoc.data();
         const date = typeof data.date === 'string' ? data.date : weightDoc.id;
+        const timestamp = typeof data.timestamp === 'string' ? data.timestamp : new Date(`${date}T12:00:00`).toISOString();
         const weightKg = typeof data.weightKg === 'number' ? data.weightKg : 0;
 
         if (weightKg <= 0) {
@@ -99,11 +102,13 @@ export const readWeightEntriesFromFirestore = async (userId: string): Promise<We
 
         return {
           date,
+          id: typeof data.id === 'string' ? data.id : weightDoc.id,
+          timestamp,
           weightKg,
         };
       })
       .filter((entry): entry is WeightEntry => entry !== null)
-      .sort((left, right) => left.date.localeCompare(right.date));
+      .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   } catch (error) {
     console.warn('Unable to read weight entries from Firestore.', { userId, error });
     return [];

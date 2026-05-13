@@ -12,12 +12,22 @@ import {
 type ProgressRingProps = {
   steps: number;
   goal: number;
+  caption?: string;
+  completeColor?: string;
+  progressColor?: string;
   resetAnimationKey?: number;
 };
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-export const ProgressRing = ({ steps, goal, resetAnimationKey = 0 }: ProgressRingProps) => {
+export const ProgressRing = ({
+  caption = 'of daily goal',
+  completeColor = COLORS.success,
+  goal,
+  progressColor = COLORS.action,
+  resetAnimationKey = 0,
+  steps,
+}: ProgressRingProps) => {
   const targetProgress = goal > 0 ? Math.min(1, steps / goal) : 0;
   const [displayProgress, setDisplayProgress] = useState(targetProgress);
   const animatedProgress = useRef(new Animated.Value(targetProgress)).current;
@@ -120,7 +130,7 @@ export const ProgressRing = ({ steps, goal, resetAnimationKey = 0 }: ProgressRin
     inputRange: [0, 1],
     outputRange: [circumference, 0],
   });
-  const ringColor = isComplete ? COLORS.success : COLORS.action;
+  const ringColor = isComplete ? completeColor : progressColor;
 
   return (
     <Animated.View style={[styles.ring, { transform: [{ scale: gainScale }] }]}>
@@ -147,26 +157,27 @@ export const ProgressRing = ({ steps, goal, resetAnimationKey = 0 }: ProgressRin
       </Svg>
       <View style={styles.center}>
         <Animated.View style={{ transform: [{ scale: percentageScale }] }}>
-          <PercentageLabel value={percentage} />
+          <PercentageLabel color={ringColor} value={percentage} />
         </Animated.View>
-        <Text style={styles.caption}>of daily goal</Text>
+        <Text style={styles.caption}>{caption}</Text>
       </View>
     </Animated.View>
   );
 };
 
 type PercentageLabelProps = {
+  color: string;
   value: string;
 };
 
-const PercentageLabel = ({ value }: PercentageLabelProps) => {
+const PercentageLabel = ({ color, value }: PercentageLabelProps) => {
   const [wholePercentage, decimalPercentage] = value.split('.');
 
   return (
-    <Text style={styles.percentage}>
+    <Text style={[styles.percentage, { color }]}>
       {wholePercentage}
-      <Text style={styles.percentageDecimal}>{`.${decimalPercentage}`}</Text>
-      <Text style={styles.percentageSuffix}>%</Text>
+      <Text style={[styles.percentageDecimal, { color }]}>{`.${decimalPercentage}`}</Text>
+      <Text style={[styles.percentageSuffix, { color }]}>%</Text>
     </Text>
   );
 };

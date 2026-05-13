@@ -42,6 +42,13 @@ const RootNavigator = () => {
       }}
     >
       <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Dashboard',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="analytics-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="challenge"
         options={{
           title: 'Challenge',
@@ -52,14 +59,8 @@ const RootNavigator = () => {
         name="google"
         options={{
           title: 'Google Data',
+          href: null,
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="cloud-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Combined',
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="analytics-outline" size={size} />,
         }}
       />
       <Tabs.Screen
@@ -73,7 +74,15 @@ const RootNavigator = () => {
         name="challenge-history"
         options={{
           title: 'Sessions',
+          href: null,
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="list-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="person-circle-outline" size={size} />,
         }}
       />
     </Tabs>

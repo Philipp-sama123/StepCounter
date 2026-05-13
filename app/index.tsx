@@ -8,36 +8,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
-import { GoalModal } from '../src/components/GoalModal';
-import { ProfileModal } from '../src/components/ProfileModal';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
-import { WeightTrendChart } from '../src/components/WeightTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import {
   getDailyChallengeStats,
   readDailyStepsFromFirestore,
   syncDailySteps,
 } from '../src/firebase/stepsSync';
-import {
-  readBodyProfileFromFirestore,
-  readWeightEntriesFromFirestore,
-  syncBodyProfile,
-  syncWeightEntry,
-} from '../src/firebase/profileSync';
 import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import {
-  getLocalDateString,
-  readBodyProfile,
-  readRecentWeightEntries,
-  saveBodyProfile,
-  saveWeightEntry,
-  UserBodyProfile,
-  WeightEntry,
-} from '../src/storage/profileStorage';
-import { getTodayString, readChallengeSessions, readGoal, saveGoal } from '../src/storage/stepStorage';
+import { getTodayString, readChallengeSessions, readGoal } from '../src/storage/stepStorage';
 
 export default function HomeScreen() {
   const {
@@ -51,64 +33,23 @@ export default function HomeScreen() {
     status,
     todaySteps,
   } = useStepCounter('combined');
-  const { signOutUser, user } = useAuth();
+  const {
+    debugMessage: systemDebugMessage,
+    isAvailable: isSystemModeAvailable,
+    isRefreshing: isSystemRefreshing,
+    isSystemTotalAvailable: hasSystemTotal,
+    lastSyncedAt: systemLastSyncedAt,
+    refreshSteps: refreshSystemSteps,
+    source: systemSource,
+    todaySteps: systemSteps,
+  } = useStepCounter('system');
+  const { user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
-  const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
-  const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
   const [progressResetKey, setProgressResetKey] = useState(0);
   const [stepReplayKey, setStepReplayKey] = useState(0);
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
-  const [bodyProfile, setBodyProfile] = useState<UserBodyProfile | null>(null);
-  const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([]);
-
-  useEffect(() => {
-    const loadGoal = async (): Promise<void> => {
-      const storedGoal = await readGoal();
-      setGoal(storedGoal);
-    };
-
-    void loadGoal();
-  }, []);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadProfile = async (): Promise<void> => {
-      const [localProfile, localWeights] = await Promise.all([
-        readBodyProfile(),
-        readRecentWeightEntries(),
-      ]);
-      const [remoteProfile, remoteWeights] = user === null
-        ? [null, []]
-        : await Promise.all([
-          readBodyProfileFromFirestore(user.uid),
-          readWeightEntriesFromFirestore(user.uid),
-        ]);
-
-      if (!isActive) {
-        return;
-      }
-
-      const nextProfile = remoteProfile ?? localProfile;
-      const nextWeights = mergeWeightEntries(localWeights, remoteWeights);
-      setBodyProfile(nextProfile);
-      setWeightEntries(nextWeights);
-
-      if (remoteProfile !== null) {
-        void saveBodyProfile(remoteProfile);
-      }
-
-      await Promise.all(nextWeights.map(saveWeightEntry));
-    };
-
-    void loadProfile();
-
-    return () => {
-      isActive = false;
-    };
-  }, [user]);
 
   useEffect(() => {
     if (user === null || todaySteps === 0) {
@@ -124,14 +65,11 @@ export default function HomeScreen() {
     });
   }, [goal, source, todaySteps, user]);
 
-  const handleSaveGoal = async (nextGoal: number): Promise<void> => {
-    setGoal(nextGoal);
-    setIsGoalModalVisible(false);
-    await saveGoal(nextGoal);
-  };
-
   const handleRefreshSteps = async (): Promise<void> => {
-    const message = await refreshSteps();
+    const [message] = await Promise.all([
+      refreshSteps(),
+      refreshSystemSteps(),
+    ]);
     showToast(message, 'success');
     setProgressResetKey((currentKey) => currentKey + 1);
     setStepReplayKey((currentKey) => currentKey + 1);
@@ -173,33 +111,6 @@ export default function HomeScreen() {
     showServerToast(result.message, result.ok ? 'standard' : 'error');
   };
 
-  const handleSaveProfile = async (profile: UserBodyProfile): Promise<void> => {
-    const today = getLocalDateString(new Date());
-    const shouldWriteWeight = profile.weightTrackingEnabled && profile.currentWeightKg > 0;
-    const nextWeightEntry = { date: today, weightKg: profile.currentWeightKg };
-
-    setBodyProfile(profile);
-    setIsProfileModalVisible(false);
-    await saveBodyProfile(profile);
-
-    if (shouldWriteWeight) {
-      await saveWeightEntry(nextWeightEntry);
-      setWeightEntries((currentEntries) => mergeWeightEntries(currentEntries, [nextWeightEntry]));
-    }
-
-    if (user === null) {
-      showServerToast('Profile saved locally. Sign in to sync it.', 'standard');
-      return;
-    }
-
-    const profileResult = await syncBodyProfile(user.uid, profile);
-    const weightResult = shouldWriteWeight
-      ? await syncWeightEntry(user.uid, nextWeightEntry)
-      : { message: 'Profile saved to Firestore.', ok: true };
-    const ok = profileResult.ok && weightResult.ok;
-    showServerToast(ok ? 'Profile saved to Firestore.' : 'Could not save all profile data.', ok ? 'standard' : 'error');
-  };
-
   const showToast = (message: string, variant: ToastMessageItem['variant'] = 'success'): void => {
     setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
   };
@@ -218,6 +129,11 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const loadGoal = async (): Promise<void> => {
+        setGoal(await readGoal());
+      };
+
+      void loadGoal();
       setProgressResetKey((currentKey) => currentKey + 1);
       setStepReplayKey((currentKey) => currentKey + 1);
     }, []),
@@ -237,34 +153,6 @@ export default function HomeScreen() {
           <View>
             <Text style={styles.subtitle}>Combined Mode</Text>
             <Text style={styles.appName}>{displayName}</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <AnimatedPressable
-              accessibilityLabel="Edit daily step goal"
-              accessibilityRole="button"
-              onPress={() => setIsGoalModalVisible(true)}
-              style={styles.iconButton}
-            >
-              <Ionicons color={COLORS.text} name="settings-outline" size={24} />
-            </AnimatedPressable>
-            <AnimatedPressable
-              accessibilityLabel="Open profile"
-              accessibilityRole="button"
-              onPress={() => setIsProfileModalVisible(true)}
-              style={styles.iconButton}
-            >
-              <Ionicons color={COLORS.text} name="person-circle-outline" size={25} />
-            </AnimatedPressable>
-            <AnimatedPressable
-              accessibilityLabel="Sign out"
-              accessibilityRole="button"
-              onPress={() => {
-                void signOutUser();
-              }}
-              style={styles.iconButton}
-            >
-              <Ionicons color={COLORS.text} name="log-out-outline" size={23} />
-            </AnimatedPressable>
           </View>
         </View>
 
@@ -330,25 +218,25 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <WeightTrendChart entries={weightEntries} profile={bodyProfile} />
+        <View style={styles.sourcePanel}>
+          <View style={styles.sourceHeader}>
+            <Text style={styles.sourceTitle}>Health data source</Text>
+            <Text style={styles.sourceSubtitle}>Combined view uses the best available source, with system health data shown beside it.</Text>
+          </View>
+          <View style={styles.sourceGrid}>
+            <StatCard label="Combined" value={todaySteps.toLocaleString()} />
+            <StatCard label="System data" value={hasSystemTotal ? systemSteps.toLocaleString() : 'No data'} />
+            <StatCard label="System source" value={getSourceLabel(systemSource)} />
+            <StatCard label="System synced" value={formatSyncTime(systemLastSyncedAt)} />
+          </View>
+          <View style={styles.sourceStatus}>
+            <Ionicons color={COLORS.primary} name={isSystemModeAvailable ? 'pulse-outline' : 'warning-outline'} size={18} />
+            <Text style={styles.sourceStatusText}>
+              {isSystemRefreshing ? 'Refreshing system data...' : systemDebugMessage}
+            </Text>
+          </View>
+        </View>
       </ScrollView>
-
-      <GoalModal
-        currentGoal={goal}
-        isVisible={isGoalModalVisible}
-        onClose={() => setIsGoalModalVisible(false)}
-        onSave={(nextGoal) => {
-          void handleSaveGoal(nextGoal);
-        }}
-      />
-      <ProfileModal
-        isVisible={isProfileModalVisible}
-        onClose={() => setIsProfileModalVisible(false)}
-        onSave={(nextProfile) => {
-          void handleSaveProfile(nextProfile);
-        }}
-        profile={bodyProfile}
-      />
       <ToastStack messages={toastMessages} onHide={hideToast} />
       <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
     </SafeAreaView>
@@ -437,15 +325,6 @@ const hasNoDailyStepChanges = (existing: ExistingDailySteps, next: ComparableDai
   && (existing.paceStepsPerMinute ?? 0) === Math.max(0, Math.floor(next.paceStepsPerMinute))
   && (existing.walkingTimeMs ?? 0) === Math.max(0, Math.floor(next.walkingTimeMs));
 
-const mergeWeightEntries = (localEntries: WeightEntry[], remoteEntries: WeightEntry[]): WeightEntry[] => {
-  const entriesByDate = new Map<string, WeightEntry>();
-  [...localEntries, ...remoteEntries].forEach((entry) => {
-    entriesByDate.set(entry.date, entry);
-  });
-
-  return Array.from(entriesByDate.values()).sort((left, right) => left.date.localeCompare(right.date));
-};
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -462,10 +341,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
   appName: {
     color: COLORS.text,
     fontSize: 30,
@@ -476,16 +351,6 @@ const styles = StyleSheet.create({
     color: COLORS.mutedText,
     fontSize: 14,
     fontWeight: '700',
-  },
-  iconButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
   hero: {
     alignItems: 'center',
@@ -626,6 +491,48 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
+  },
+  sourcePanel: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 14,
+    padding: 14,
+  },
+  sourceHeader: {
+    gap: 3,
+  },
+  sourceTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  sourceSubtitle: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  sourceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  sourceStatus: {
+    alignItems: 'center',
+    backgroundColor: COLORS.primarySoft,
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 9,
+    padding: 12,
+  },
+  sourceStatusText: {
+    color: COLORS.text,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
   refreshing: {
     opacity: 0.9,

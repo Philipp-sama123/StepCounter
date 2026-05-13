@@ -9,11 +9,14 @@ export type UserBodyProfile = {
 
 export type WeightEntry = {
   date: string;
+  id: string;
+  timestamp: string;
   weightKg: number;
 };
 
 const BODY_PROFILE_KEY = 'profile:body';
 const WEIGHT_HISTORY_KEY_PREFIX = 'weight:';
+const WEIGHT_HISTORY_LIST_KEY = 'weight:entries';
 
 const parseNumber = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
 
@@ -61,9 +64,12 @@ export const saveBodyProfile = async (profile: UserBodyProfile): Promise<void> =
 
 export const saveWeightEntry = async (entry: WeightEntry): Promise<void> => {
   try {
-    await AsyncStorage.setItem(getWeightKey(entry.date), String(sanitizeBodyNumber(entry.weightKg)));
+    const entries = await readRecentWeightEntries(365);
+    const nextEntry = normalizeWeightEntry(entry);
+    const nextEntries = mergeWeightEntries(entries, [nextEntry]);
+    await AsyncStorage.setItem(WEIGHT_HISTORY_LIST_KEY, JSON.stringify(nextEntries));
   } catch (error) {
-    console.warn(`Unable to save weight for ${entry.date}.`, error);
+    console.warn(`Unable to save weight for ${entry.timestamp}.`, error);
   }
 };
 
@@ -75,16 +81,29 @@ export const readRecentWeightEntries = async (days = 30): Promise<WeightEntry[]>
   });
 
   try {
-    const values = await AsyncStorage.multiGet(dates.map(getWeightKey));
-    return values
-      .map(([key, value], index) => {
+    const storedEntries = await AsyncStorage.getItem(WEIGHT_HISTORY_LIST_KEY);
+    const parsedEntries = storedEntries === null ? [] : (JSON.parse(storedEntries) as Array<Partial<WeightEntry>>);
+    const normalizedEntries = parsedEntries.map(normalizeWeightEntry).filter((entry) => entry.weightKg > 0);
+
+    if (normalizedEntries.length > 0) {
+      return normalizedEntries
+        .filter((entry) => dates.includes(entry.date))
+        .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+    }
+
+    const legacyValues = await AsyncStorage.multiGet(dates.map(getWeightKey));
+    return legacyValues
+      .map(([, value], index) => {
         const weightKg = Number(value);
         if (!Number.isFinite(weightKg) || weightKg <= 0) {
           return null;
         }
 
+        const timestamp = new Date(`${dates[index]}T12:00:00`).toISOString();
         return {
           date: dates[index],
+          id: getWeightEntryId(timestamp),
+          timestamp,
           weightKg,
         };
       })
@@ -102,6 +121,38 @@ export const getLocalDateString = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+export const createWeightEntry = (weightKg: number, timestamp = new Date().toISOString()): WeightEntry => ({
+  date: getLocalDateString(new Date(timestamp)),
+  id: getWeightEntryId(timestamp),
+  timestamp,
+  weightKg: sanitizeBodyNumber(weightKg),
+});
+
+const normalizeWeightEntry = (entry: Partial<WeightEntry>): WeightEntry => {
+  const timestamp = typeof entry.timestamp === 'string'
+    ? entry.timestamp
+    : typeof entry.date === 'string'
+      ? new Date(`${entry.date}T12:00:00`).toISOString()
+      : new Date().toISOString();
+
+  return {
+    date: typeof entry.date === 'string' ? entry.date : getLocalDateString(new Date(timestamp)),
+    id: typeof entry.id === 'string' ? entry.id : getWeightEntryId(timestamp),
+    timestamp,
+    weightKg: sanitizeBodyNumber(parseNumber(entry.weightKg)),
+  };
+};
+
+const mergeWeightEntries = (localEntries: WeightEntry[], nextEntries: WeightEntry[]): WeightEntry[] => {
+  const entriesById = new Map<string, WeightEntry>();
+  [...localEntries, ...nextEntries].forEach((entry) => {
+    entriesById.set(entry.id, entry);
+  });
+
+  return Array.from(entriesById.values()).sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+};
+
 const getWeightKey = (date: string): string => `${WEIGHT_HISTORY_KEY_PREFIX}${date}`;
+const getWeightEntryId = (timestamp: string): string => timestamp.replace(/[^a-zA-Z0-9-]/g, '-');
 
 const sanitizeBodyNumber = (value: number): number => Math.max(0, Math.round(value * 10) / 10);

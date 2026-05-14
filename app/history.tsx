@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
@@ -16,7 +16,15 @@ import {
   syncLocalStepDataToFirestore,
 } from '../src/firebase/stepsSync';
 import { readStepsForDateFromSystemHealth } from '../src/health/stepsProvider';
-import { readGoal, readLastSevenDays, readChallengeSessions, readRecentChallengeSessions, saveStepsForDate, StepHistoryEntry } from '../src/storage/stepStorage';
+import {
+  mergeChallengeSessionsForDate,
+  readGoal,
+  readLastSevenDays,
+  readChallengeSessions,
+  readRecentChallengeSessions,
+  saveStepsForDate,
+  StepHistoryEntry,
+} from '../src/storage/stepStorage';
 
 export default function HistoryScreen() {
   const { user } = useAuth();
@@ -24,12 +32,15 @@ export default function HistoryScreen() {
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [sessionSums, setSessionSums] = useState<Record<string, number>>({});
   const [rawStepSums, setRawStepSums] = useState<Record<string, number>>({});
+  const [dailyStorageBreakdown, setDailyStorageBreakdown] = useState<Record<string, DailyStorageBreakdown>>({});
   const [paceByDate, setPaceByDate] = useState<Record<string, number>>({});
   const [dataSourceLabel, setDataSourceLabel] = useState('Local cache');
   const [graphMode, setGraphMode] = useState<'pace' | 'steps'>('steps');
   const [historyView, setHistoryView] = useState<'sessions' | 'totals'>('totals');
   const [sessions, setSessions] = useState<StoredChallengeSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<StoredChallengeSession | null>(null);
+  const [selectedStorageDetail, setSelectedStorageDetail] = useState<StorageDetail | null>(null);
+  const [sessionStorageCopies, setSessionStorageCopies] = useState<Record<string, SessionStorageCopies>>({});
   const [graphReplayKey, setGraphReplayKey] = useState(0);
   const sessionGraphAnimation = useRef(new Animated.Value(0)).current;
 
@@ -80,8 +91,20 @@ export default function HistoryScreen() {
           ...entry,
           steps: Math.max(entry.steps, remoteDailySteps[entry.date]?.steps ?? 0, systemDailySteps[entry.date] ?? 0, sums[entry.date] ?? 0),
         }));
+        const breakdowns = entries.reduce<Record<string, DailyStorageBreakdown>>((result, entry) => {
+          result[entry.date] = {
+            firestoreGoal: remoteDailySteps[entry.date]?.goal ?? null,
+            firestorePaceStepsPerMinute: remoteDailySteps[entry.date]?.paceStepsPerMinute ?? null,
+            firestoreSessionSteps: remoteSessionSums[entry.date] ?? 0,
+            firestoreSteps: remoteDailySteps[entry.date]?.steps ?? 0,
+            localSessionSteps: localSessionSums[entry.date] ?? 0,
+            localSteps: entry.steps,
+            systemHealthSteps: systemDailySteps[entry.date] ?? 0,
+          };
+          return result;
+        }, {});
 
-        await Promise.all(Object.entries(systemDailySteps).map(([date, steps]) => saveStepsForDate(date, steps)));
+        await Promise.all(correctedEntries.map((entry) => saveStepsForDate(entry.date, entry.steps)));
 
         if (user !== null) {
           void syncLocalStepDataToFirestore({
@@ -97,6 +120,7 @@ export default function HistoryScreen() {
           setGoal(getMostRecentRemoteGoal(remoteDailySteps) ?? storedGoal);
           setSessionSums(sums);
           setRawStepSums(rawSums);
+          setDailyStorageBreakdown(breakdowns);
           setPaceByDate(paces);
           setDataSourceLabel(getDataSourceLabel({ hasRemoteDailyData, hasRemoteSessionData, hasSystemDailyData }));
         }
@@ -105,11 +129,14 @@ export default function HistoryScreen() {
       const loadSessions = async (): Promise<void> => {
         const localSessions = await readRecentChallengeSessions();
         const remoteSessions = user === null ? [] : await readChallengeSessionsFromFirestore(user.uid);
+        await hydrateLocalSessions(remoteSessions);
         const mergedSessions = mergeSessions(remoteSessions, localSessions);
+        const copyMap = getSessionStorageCopies(remoteSessions, localSessions);
 
         if (isActive) {
           setSessions(mergedSessions);
           setSelectedSession(mergedSessions[0] ?? null);
+          setSessionStorageCopies(copyMap);
         }
       };
 
@@ -233,7 +260,21 @@ export default function HistoryScreen() {
             const wasCorrected = sessionSteps > rawSteps;
 
             return (
-              <View key={entry.date} style={styles.dayRow}>
+              <AnimatedPressable
+                accessibilityRole="button"
+                key={entry.date}
+                onPress={() => setSelectedStorageDetail({
+                  dataSourceLabel,
+                  entry,
+                  goal,
+                  kind: 'day',
+                  paceStepsPerMinute: paceByDate[entry.date] ?? 0,
+                  rawSteps,
+                  storageBreakdown: dailyStorageBreakdown[entry.date] ?? getEmptyDailyStorageBreakdown(entry.steps),
+                  sessionSteps,
+                })}
+                style={styles.dayRow}
+              >
                 <View style={styles.dayCopy}>
                   <Text style={styles.dayName}>{entry.dayName}</Text>
                   <Text style={styles.dayDate}>{entry.date}</Text>
@@ -251,7 +292,7 @@ export default function HistoryScreen() {
                     </Text>
                   ) : null}
                 </View>
-              </View>
+              </AnimatedPressable>
             );
           })}
         </View>
@@ -344,7 +385,14 @@ export default function HistoryScreen() {
                   <AnimatedPressable
                     accessibilityRole="button"
                     key={`${session.date}-${session.startedAt}`}
-                    onPress={() => setSelectedSession(session)}
+                    onPress={() => {
+                      setSelectedSession(session);
+                      setSelectedStorageDetail({
+                        kind: 'session',
+                        session,
+                        storageCopies: sessionStorageCopies[getSessionStorageKey(session)] ?? { firestore: false, local: true },
+                      });
+                    }}
                     style={styles.sessionRow}
                   >
                     <View style={styles.sessionDate}>
@@ -368,9 +416,45 @@ export default function HistoryScreen() {
           </>
         )}
       </ScrollView>
+      <StorageDetailModal
+        detail={selectedStorageDetail}
+        onClose={() => setSelectedStorageDetail(null)}
+      />
     </SafeAreaView>
   );
 }
+
+type StorageDetail =
+  | {
+      dataSourceLabel: string;
+      entry: StepHistoryEntry;
+      goal: number;
+      kind: 'day';
+      paceStepsPerMinute: number;
+      rawSteps: number;
+      storageBreakdown: DailyStorageBreakdown;
+      sessionSteps: number;
+    }
+  | {
+      kind: 'session';
+      session: StoredChallengeSession;
+      storageCopies: SessionStorageCopies;
+    };
+
+type DailyStorageBreakdown = {
+  firestoreGoal: number | null;
+  firestorePaceStepsPerMinute: number | null;
+  firestoreSessionSteps: number;
+  firestoreSteps: number;
+  localSessionSteps: number;
+  localSteps: number;
+  systemHealthSteps: number;
+};
+
+type SessionStorageCopies = {
+  firestore: boolean;
+  local: boolean;
+};
 
 type MetricCardProps = {
   label: string;
@@ -381,6 +465,81 @@ const MetricCard = ({ label, value }: MetricCardProps) => (
   <View style={styles.metricCard}>
     <Text style={styles.metricLabel}>{label}</Text>
     <Text style={styles.metricValue}>{value}</Text>
+  </View>
+);
+
+type StorageDetailModalProps = {
+  detail: StorageDetail | null;
+  onClose: () => void;
+};
+
+const StorageDetailModal = ({ detail, onClose }: StorageDetailModalProps) => (
+  <Modal animationType="fade" transparent visible={detail !== null} onRequestClose={onClose}>
+    <View style={styles.modalOverlay}>
+      <Pressable accessibilityRole="button" onPress={onClose} style={styles.modalBackdrop} />
+      <View style={styles.modalCard}>
+        {detail?.kind === 'day' ? (
+          <>
+            <Text style={styles.modalEyebrow}>Daily storage</Text>
+            <Text style={styles.modalTitle}>{`${detail.entry.dayName} · ${detail.entry.date}`}</Text>
+            <Text style={styles.modalIntro}>This is the merged value the app keeps for the day, using local cache, Firestore, system health, and sessions as available.</Text>
+            <StorageDetailRow label="Stored total" value={`${detail.entry.steps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Local daily cache" value={`${detail.storageBreakdown.localSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Firestore daily" value={`${detail.storageBreakdown.firestoreSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="System health" value={`${detail.storageBreakdown.systemHealthSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Local sessions" value={`${detail.storageBreakdown.localSessionSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Firestore sessions" value={`${detail.storageBreakdown.firestoreSessionSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Raw daily best" value={`${detail.rawSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Session best" value={`${detail.sessionSteps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Pace" value={`${detail.paceStepsPerMinute.toLocaleString()}/min`} />
+            <StorageDetailRow
+              label="Firestore pace"
+              value={detail.storageBreakdown.firestorePaceStepsPerMinute === null ? 'Not stored' : `${detail.storageBreakdown.firestorePaceStepsPerMinute.toLocaleString()}/min`}
+            />
+            <StorageDetailRow label="Goal" value={`${detail.goal.toLocaleString()} steps`} />
+            <StorageDetailRow
+              label="Firestore goal"
+              value={detail.storageBreakdown.firestoreGoal === null ? 'Not stored' : `${detail.storageBreakdown.firestoreGoal.toLocaleString()} steps`}
+            />
+            <StorageDetailRow label="Progress" value={`${Math.round((detail.entry.steps / Math.max(1, detail.goal)) * 100)}%`} />
+            <StorageDetailRow label="Loaded from" value={detail.dataSourceLabel} />
+          </>
+        ) : null}
+
+        {detail?.kind === 'session' ? (
+          <>
+            <Text style={styles.modalEyebrow}>Session storage</Text>
+            <Text style={styles.modalTitle}>{`${formatSessionDay(detail.session.startedAt)} · ${formatSessionTime(detail.session.startedAt)}`}</Text>
+            <Text style={styles.modalIntro}>This is one saved challenge session. It is used for the session history and as a minimum for the daily total.</Text>
+            <StorageDetailRow label="Steps" value={`${detail.session.steps.toLocaleString()} steps`} />
+            <StorageDetailRow label="Pace" value={`${getPace(detail.session).toLocaleString()}/min`} />
+            <StorageDetailRow label="Duration" value={formatDuration(detail.session.durationMs)} />
+            <StorageDetailRow label="Started" value={formatFullDateTime(detail.session.startedAt)} />
+            <StorageDetailRow label="Ended" value={formatFullDateTime(detail.session.endedAt)} />
+            <StorageDetailRow label="Goal" value={detail.session.challengeGoal === undefined ? 'Not stored' : `${detail.session.challengeGoal.toLocaleString()} steps`} />
+            <StorageDetailRow label="Source" value={detail.session.source ?? 'live-sensor'} />
+            <StorageDetailRow label="Local cache" value={detail.storageCopies.local ? 'Stored' : 'Not found'} />
+            <StorageDetailRow label="Firestore" value={detail.storageCopies.firestore ? 'Stored' : 'Not found'} />
+          </>
+        ) : null}
+
+        <AnimatedPressable accessibilityRole="button" onPress={onClose} style={styles.modalButton}>
+          <Text style={styles.modalButtonText}>Close</Text>
+        </AnimatedPressable>
+      </View>
+    </View>
+  </Modal>
+);
+
+type StorageDetailRowProps = {
+  label: string;
+  value: string;
+};
+
+const StorageDetailRow = ({ label, value }: StorageDetailRowProps) => (
+  <View style={styles.detailRow}>
+    <Text style={styles.detailLabel}>{label}</Text>
+    <Text style={styles.detailValue}>{value}</Text>
   </View>
 );
 
@@ -450,6 +609,49 @@ const mergeSessions = (
   return Array.from(sessionMap.values()).sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
 };
 
+const getSessionStorageKey = (session: Pick<StoredChallengeSession, 'date' | 'startedAt'>): string =>
+  `${session.date}-${session.startedAt}`;
+
+const getSessionStorageCopies = (
+  remoteSessions: StoredChallengeSession[],
+  localSessions: Array<StoredChallengeSession>,
+): Record<string, SessionStorageCopies> => {
+  const copies: Record<string, SessionStorageCopies> = {};
+
+  localSessions.forEach((session) => {
+    const key = getSessionStorageKey(session);
+    copies[key] = { firestore: copies[key]?.firestore ?? false, local: true };
+  });
+
+  remoteSessions.forEach((session) => {
+    const key = getSessionStorageKey(session);
+    copies[key] = { firestore: true, local: copies[key]?.local ?? false };
+  });
+
+  return copies;
+};
+
+const getEmptyDailyStorageBreakdown = (localSteps: number): DailyStorageBreakdown => ({
+  firestoreGoal: null,
+  firestorePaceStepsPerMinute: null,
+  firestoreSessionSteps: 0,
+  firestoreSteps: 0,
+  localSessionSteps: 0,
+  localSteps,
+  systemHealthSteps: 0,
+});
+
+const hydrateLocalSessions = async (remoteSessions: StoredChallengeSession[]): Promise<void> => {
+  const sessionsByDate = remoteSessions.reduce<Record<string, StoredChallengeSession[]>>((result, session) => {
+    result[session.date] = [...(result[session.date] ?? []), session];
+    return result;
+  }, {});
+
+  await Promise.all(Object.entries(sessionsByDate).map(([date, sessions]) =>
+    mergeChallengeSessionsForDate(date, sessions.map(({ date: _date, ...session }) => session)),
+  ));
+};
+
 const formatDuration = (durationMs: number): string => {
   const totalSeconds = Math.floor(durationMs / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -472,6 +674,13 @@ const formatSessionDay = (timestamp: string): string => new Date(timestamp).toLo
 const formatSessionTime = (timestamp: string): string => new Date(timestamp).toLocaleTimeString(undefined, {
   hour: '2-digit',
   minute: '2-digit',
+});
+
+const formatFullDateTime = (timestamp: string): string => new Date(timestamp).toLocaleString(undefined, {
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  month: 'short',
 });
 
 const styles = StyleSheet.create({
@@ -675,6 +884,80 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 11,
     fontWeight: '700',
+  },
+  modalOverlay: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(11, 18, 14, 0.58)',
+  },
+  modalCard: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    maxWidth: 420,
+    padding: 18,
+    width: '100%',
+  },
+  modalEyebrow: {
+    color: COLORS.challenge,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  modalTitle: {
+    color: COLORS.text,
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  modalIntro: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  detailRow: {
+    alignItems: 'flex-start',
+    borderTopColor: COLORS.border,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    justifyContent: 'space-between',
+    paddingTop: 9,
+  },
+  detailLabel: {
+    color: COLORS.mutedText,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  detailValue: {
+    color: COLORS.text,
+    flex: 1.35,
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'right',
+  },
+  modalButton: {
+    alignItems: 'center',
+    backgroundColor: COLORS.challenge,
+    borderRadius: 8,
+    justifyContent: 'center',
+    marginTop: 6,
+    minHeight: 44,
+    paddingHorizontal: 16,
+  },
+  modalButtonText: {
+    color: COLORS.surface,
+    fontSize: 14,
+    fontWeight: '900',
   },
   timelinePanel: {
     backgroundColor: COLORS.surface,

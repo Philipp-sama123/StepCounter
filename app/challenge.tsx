@@ -14,7 +14,7 @@ import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
-import { syncChallengeSession, syncDailySteps } from '../src/firebase/stepsSync';
+import { syncChallengeSession } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import {
@@ -99,20 +99,6 @@ export default function ChallengeScreen() {
         void loadGoal();
     }, []);
 
-    useEffect(() => {
-        if (user === null || todaySteps === 0) {
-            return;
-        }
-
-        void syncDailySteps({
-            date: getTodayString(),
-            goal,
-            source,
-            steps: todaySteps,
-            userId: user.uid,
-        });
-    }, [goal, source, todaySteps, user]);
-
     const handleSaveGoal = async (nextGoal: number): Promise<void> => {
         if (goalModalMode === 'daily-challenge') {
             setDailyChallengeGoal(nextGoal);
@@ -133,15 +119,15 @@ export default function ChallengeScreen() {
     };
 
     const showToast = (message: string): void => {
-        setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+        setToastMessages((currentMessages) => appendToast(currentMessages, { message }));
     };
 
     const showSessionToast = (message: string): void => {
-        setSessionToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant: 'standard' }]);
+        setSessionToastMessages((currentMessages) => appendToast(currentMessages, { message, variant: 'standard' }));
     };
 
     const showServerToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
-        setServerToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
+        setServerToastMessages((currentMessages) => appendToast(currentMessages, { message, variant }));
     };
 
     const hideToast = (id: number): void => {
@@ -580,21 +566,20 @@ export default function ChallengeScreen() {
                 </View>
 
                 <View style={styles.sensorSection}>
-                    {isChallengeActive ? (
-                        <View style={styles.averagePanel}>
-                            <View style={styles.averageHeader}>
-                                <Text style={styles.averageTitle}>Last minute averages</Text>
-                                <Text style={styles.averageMeta}>rolling 60s</Text>
+                    <View style={styles.averagePanel}>
+                        <View style={styles.averageHeader}>
+                            <View>
+                                <Text style={styles.averageTitle}>Movement insight</Text>
+                                <Text style={styles.averageDescription}>Animated live signals from your last minute of movement.</Text>
                             </View>
-                            <View style={styles.averageGrid}>
-                                <AverageMetric label="Steps" suffix="/min" value={rollingAverages.stepsPerMinute} />
-                                <AverageMetric label="Accel" suffix="g" value={rollingAverages.accelerometerMagnitude} />
-                                <AverageMetric label="Gyro" suffix="rad/s" value={rollingAverages.gyroscopeMagnitude} />
-                                <AverageMetric label="Motion" suffix="m/s2" value={rollingAverages.deviceMotionMagnitude} />
-                                <AverageMetric label="Mag" suffix="uT" value={rollingAverages.magnetometerMagnitude} />
-                            </View>
+                            <Text style={styles.averageMeta}>{isChallengeActive ? 'running' : 'idle'}</Text>
                         </View>
-                    ) : null}
+                        <View style={styles.averageGrid}>
+                            <AverageMetric label="Cadence" suffix="/min" value={rollingAverages.stepsPerMinute} />
+                            <AverageMetric label="Acceleration" suffix="g" value={rollingAverages.accelerometerMagnitude} />
+                            <AverageMetric label="Rotation" suffix="rad/s" value={rollingAverages.gyroscopeMagnitude} />
+                        </View>
+                    </View>
 
                     <View style={styles.sensorSummary}>
                         <View style={styles.sensorSummaryItem}>
@@ -638,124 +623,6 @@ export default function ChallengeScreen() {
                             </View>
                         </View>
                     </View>
-
-                    <View style={styles.sensorConsole}>
-                        <View style={styles.consoleHeader}>
-                            <Text style={styles.consoleTitle}>Pedometer log</Text>
-                            <Text style={styles.consoleMeta}>last 10</Text>
-                        </View>
-                        <SensorExplanation
-                            description="Live step events from the phone pedometer. Use it to check whether the challenge is receiving fresh movement data."
-                            items={[
-                                { label: 'Raw', text: 'The cumulative value reported by the device sensor.' },
-                                { label: 'Delta', text: 'New steps added since the previous event.' },
-                                { label: 'Total', text: 'Challenge steps counted during this live session.' },
-                                { label: 'Use', text: 'Best quick check for whether challenge steps are being counted live.' },
-                            ]}
-                        />
-                        {sensorLog.length > 0 ? (
-                            <>
-                                <View style={styles.sensorCurrent}>
-                                    <Text style={styles.sensorCurrentValue}>
-                                        {sensorLog[0].totalSteps.toLocaleString()}
-                                    </Text>
-                                    <Text style={styles.sensorCurrentLabel}>current session total</Text>
-                                </View>
-                                <View style={styles.consoleLogBox}>
-                                    {sensorLog.slice(0, 10).map((entry, index) => (
-                                        <View key={`${entry.timestamp}-${entry.rawSteps}-${index}`} style={styles.consoleRow}>
-                                            <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
-                                            <Text style={styles.consoleLine}>{`raw ${entry.rawSteps.toLocaleString()}  +${entry.delta.toLocaleString()}  total ${entry.totalSteps.toLocaleString()}`}</Text>
-                                        </View>
-                                    ))}
-                                </View>
-                            </>
-                        ) : (
-                            <View style={styles.consoleLogBox}>
-                                <Text style={styles.consoleEmpty}>waiting for live pedometer events...</Text>
-                            </View>
-                        )}
-                    </View>
-
-                    <View style={styles.sensorConsole}>
-                        <View style={styles.consoleHeader}>
-                            <Text style={styles.consoleTitle}>Accelerometer</Text>
-                            <Text style={styles.consoleMeta}>{accelerometerAvailable === false ? 'unavailable' : 'live'}</Text>
-                        </View>
-                        <SensorExplanation
-                            description="Linear movement on the x, y, and z axes. It helps show shake, stride impact, and how much the phone is moving during a challenge."
-                            items={[
-                                { label: 'x/y/z', text: 'Movement along the phone axes.' },
-                                { label: 'g', text: 'Gravity units: 1g is roughly Earth gravity, about 9.81 m/s2.' },
-                                { label: 'Magnitude', text: 'Combined movement strength across all three axes.' },
-                                { label: 'Use', text: 'Useful for stride impact, shaking, phone placement, and movement intensity.' },
-                            ]}
-                        />
-                        {accelerometerLog.length > 0 ? (
-                            <>
-                                <View style={styles.sensorCurrent}>
-                                    <Text style={styles.sensorCurrentValue}>{formatAcceleration(accelerometerLog[0].magnitude)}</Text>
-                                    <Text style={styles.sensorCurrentLabel}>movement magnitude</Text>
-                                </View>
-                                <View style={styles.consoleLogBox}>
-                                    {accelerometerLog.slice(0, 10).map((entry, index) => (
-                                        <View key={`${entry.timestamp}-${index}`} style={styles.consoleRow}>
-                                            <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
-                                            <Text style={styles.consoleLine}>
-                                                {`x ${formatAxis(entry.x)}  y ${formatAxis(entry.y)}  z ${formatAxis(entry.z)}  m ${formatAcceleration(entry.magnitude)}`}
-                                            </Text>
-                                        </View>
-                                    ))}
-                                </View>
-                            </>
-                        ) : (
-                            <View style={styles.consoleLogBox}>
-                                <Text style={styles.consoleEmpty}>
-                                    {accelerometerAvailable === false ? 'accelerometer unavailable on this device' : 'waiting for accelerometer events...'}
-                                </Text>
-                            </View>
-                        )}
-                    </View>
-
-                    <SensorConsole
-                        available={gyroscopeAvailable}
-                        description="Rotation speed around the phone axes. Useful for spotting arm swings, turns, and phone rotation while moving."
-                        log={gyroscopeLog}
-                        metrics={[
-                            { label: 'x/y/z', text: 'Rotation speed around each phone axis.' },
-                            { label: 'rad/s', text: 'Radians per second: how fast the phone is rotating.' },
-                            { label: 'Magnitude', text: 'Combined rotation strength across all three axes.' },
-                            { label: 'Use', text: 'Useful for arm swing, turns, and whether the phone is rotating while walking.' },
-                        ]}
-                        title="Gyroscope"
-                        unitLabel="rotation magnitude"
-                    />
-                    <SensorConsole
-                        available={deviceMotionAvailable}
-                        description="A combined motion feed. It blends acceleration and rotation, which is useful for seeing richer movement patterns than steps alone."
-                        log={deviceMotionLog}
-                        metrics={[
-                            { label: 'acc', text: 'Acceleration on x, y, and z axes.' },
-                            { label: 'm/s2', text: 'Meters per second squared: physical acceleration strength.' },
-                            { label: 'rot', text: 'Rotation rate alpha, beta, gamma in degrees per second when available.' },
-                            { label: 'Use', text: 'Useful for richer movement quality, combining impact and rotation.' },
-                        ]}
-                        title="Device motion"
-                        unitLabel="acceleration magnitude"
-                    />
-                    <SensorConsole
-                        available={magnetometerAvailable}
-                        description="Magnetic field readings around the phone. Mostly useful for orientation context, not direct step counting."
-                        log={magnetometerLog}
-                        metrics={[
-                            { label: 'x/y/z', text: 'Magnetic field strength on each phone axis.' },
-                            { label: 'uT', text: 'Microtesla: the unit used for magnetic field strength.' },
-                            { label: 'Magnitude', text: 'Combined magnetic field strength across all three axes.' },
-                            { label: 'Use', text: 'Useful for orientation context and detecting magnetic interference.' },
-                        ]}
-                        title="Magnetometer"
-                        unitLabel="magnetic field"
-                    />
 
                     <Text style={styles.sensorHint}>{debugMessage}</Text>
                 </View>
@@ -804,6 +671,17 @@ const formatLogTime = (timestamp: string): string => new Date(timestamp).toLocal
     second: '2-digit',
 });
 
+const formatReferenceSync = (timestamp: string | null): string => {
+    if (timestamp === null) {
+        return 'not loaded';
+    }
+
+    return new Date(timestamp).toLocaleTimeString(undefined, {
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
 const formatDuration = (durationMs: number): string => {
     const totalSeconds = Math.floor(durationMs / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -813,6 +691,27 @@ const formatDuration = (durationMs: number): string => {
 
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+
+const appendToast = (
+    currentMessages: ToastMessageItem[],
+    nextMessage: Omit<ToastMessageItem, 'id'>,
+): ToastMessageItem[] => {
+    const hasDuplicateVisible = currentMessages.some((message) =>
+        message.message === nextMessage.message && (message.variant ?? 'success') === (nextMessage.variant ?? 'success'),
+    );
+
+    if (hasDuplicateVisible) {
+        return currentMessages;
+    }
+
+    return [
+        ...currentMessages.slice(-2),
+        {
+            ...nextMessage,
+            id: Date.now() + Math.floor(Math.random() * 1000),
+        },
+    ];
+};
 
 const getAccelerationMagnitude = (x: number, y: number, z: number): number =>
     Math.sqrt(x * x + y * y + z * z);
@@ -1031,6 +930,20 @@ const SensorExplanation = ({ description, items }: SensorExplanationProps) => (
     </View>
 );
 
+type ReferenceCardProps = {
+    label: string;
+    note?: string;
+    value: string;
+};
+
+const ReferenceCard = ({ label, note, value }: ReferenceCardProps) => (
+    <View style={styles.referenceCard}>
+        <Text style={styles.referenceLabel}>{label}</Text>
+        <Text style={styles.referenceValue}>{value}</Text>
+        {note === undefined ? null : <Text style={styles.referenceNote} numberOfLines={2}>{note}</Text>}
+    </View>
+);
+
 const SensorConsole = ({ available, description, log, metrics, title, unitLabel }: SensorConsoleProps) => (
     <View style={styles.sensorConsole}>
         <View style={styles.consoleHeader}>
@@ -1242,6 +1155,13 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '900',
     },
+    averageDescription: {
+        color: COLORS.text,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
+        marginTop: 2,
+    },
     averageMeta: {
         color: COLORS.challenge,
         fontSize: 11,
@@ -1339,6 +1259,107 @@ const styles = StyleSheet.create({
         color: COLORS.challenge,
         fontSize: 15,
         fontWeight: '900',
+    },
+    advancedPanel: {
+        backgroundColor: COLORS.surface,
+        borderColor: COLORS.border,
+        borderRadius: 8,
+        borderWidth: 1,
+        overflow: 'hidden',
+    },
+    advancedToggle: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 12,
+        justifyContent: 'space-between',
+        minHeight: 68,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    advancedToggleCopy: {
+        flex: 1,
+        gap: 3,
+    },
+    advancedToggleTitle: {
+        color: COLORS.text,
+        fontSize: 15,
+        fontWeight: '900',
+    },
+    advancedToggleText: {
+        color: COLORS.mutedText,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
+    },
+    advancedContent: {
+        borderTopColor: COLORS.border,
+        borderTopWidth: 1,
+        gap: 12,
+        padding: 14,
+    },
+    referencePanel: {
+        backgroundColor: COLORS.challengeSoft,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: 12,
+        padding: 12,
+    },
+    referenceHeader: {
+        alignItems: 'flex-start',
+        flexDirection: 'row',
+        gap: 10,
+        justifyContent: 'space-between',
+    },
+    referenceTitle: {
+        color: COLORS.challenge,
+        fontSize: 15,
+        fontWeight: '900',
+    },
+    referenceSubtitle: {
+        color: COLORS.text,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
+        marginTop: 2,
+    },
+    referenceSynced: {
+        color: COLORS.challenge,
+        fontSize: 11,
+        fontWeight: '900',
+    },
+    referenceGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    referenceCard: {
+        backgroundColor: COLORS.surface,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        minHeight: 76,
+        paddingHorizontal: 10,
+        paddingVertical: 9,
+        width: '31%',
+    },
+    referenceLabel: {
+        color: COLORS.mutedText,
+        fontSize: 11,
+        fontWeight: '900',
+        marginBottom: 5,
+    },
+    referenceValue: {
+        color: COLORS.challenge,
+        fontSize: 16,
+        fontWeight: '900',
+    },
+    referenceNote: {
+        color: COLORS.mutedText,
+        fontSize: 10,
+        fontWeight: '700',
+        lineHeight: 13,
+        marginTop: 4,
     },
     sensorConsole: {
         borderTopColor: COLORS.border,

@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, AppStateStatus, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
@@ -33,16 +33,6 @@ export default function HomeScreen() {
     status,
     todaySteps,
   } = useStepCounter('combined');
-  const {
-    debugMessage: systemDebugMessage,
-    isAvailable: isSystemModeAvailable,
-    isRefreshing: isSystemRefreshing,
-    isSystemTotalAvailable: hasSystemTotal,
-    lastSyncedAt: systemLastSyncedAt,
-    refreshSteps: refreshSystemSteps,
-    source: systemSource,
-    todaySteps: systemSteps,
-  } = useStepCounter('system');
   const { user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [progressResetKey, setProgressResetKey] = useState(0);
@@ -50,65 +40,104 @@ export default function HomeScreen() {
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
+  const hasSyncedOnOpenRef = useRef(false);
+  const latestSyncSnapshotRef = useRef<DailySyncSnapshot>({
+    goal,
+    source,
+    steps: todaySteps,
+    userId: user?.uid ?? null,
+  });
 
   useEffect(() => {
-    if (user === null || todaySteps === 0) {
-      return;
-    }
-
-    void syncDailySteps({
-      date: getTodayString(),
+    latestSyncSnapshotRef.current = {
       goal,
       source,
       steps: todaySteps,
-      userId: user.uid,
-    });
+      userId: user?.uid ?? null,
+    };
   }, [goal, source, todaySteps, user]);
 
-  const handleRefreshSteps = async (): Promise<void> => {
-    const [message] = await Promise.all([
-      refreshSteps(),
-      refreshSystemSteps(),
-    ]);
-    showToast(message, 'success');
-    setProgressResetKey((currentKey) => currentKey + 1);
-    setStepReplayKey((currentKey) => currentKey + 1);
-  };
-
-  const handleSaveToFirestore = async (): Promise<void> => {
-    if (user === null) {
-      showServerToast('Sign in before saving to Firestore.', 'error');
+  const syncDailySnapshotToFirestore = useCallback(async (
+    snapshot: DailySyncSnapshot,
+    options: { notify: boolean; showNoChanges?: boolean } = { notify: false },
+  ): Promise<void> => {
+    if (snapshot.userId === null || snapshot.steps === 0) {
+      if (options.notify) {
+        showServerToast(snapshot.userId === null ? 'Sign in before saving to Firestore.' : 'No steps to save yet.', 'error');
+      }
       return;
     }
 
-    setIsSavingToFirestore(true);
     const today = getTodayString();
     const sessions = await readChallengeSessions(today);
     const challengeStats = getDailyChallengeStats(sessions);
-    const existingDailySteps = await readDailyStepsFromFirestore(user.uid, [today]);
+    const existingDailySteps = await readDailyStepsFromFirestore(snapshot.userId, [today]);
     const existing = existingDailySteps[today];
 
     if (existing !== undefined && hasNoDailyStepChanges(existing, {
       ...challengeStats,
-      goal,
-      source,
-      steps: todaySteps,
+      goal: snapshot.goal,
+      source: snapshot.source,
+      steps: snapshot.steps,
     })) {
-      setIsSavingToFirestore(false);
-      showServerToast('No changes to save.', 'standard');
+      if (options.notify && options.showNoChanges) {
+        showServerToast('No changes to save.', 'standard');
+      }
       return;
     }
 
     const result = await syncDailySteps({
       ...challengeStats,
       date: today,
-      goal,
-      source,
-      steps: todaySteps,
-      userId: user.uid,
+      goal: snapshot.goal,
+      source: snapshot.source,
+      steps: snapshot.steps,
+      userId: snapshot.userId,
     });
+
+    if (options.notify) {
+      showServerToast(result.message, result.ok ? 'standard' : 'error');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (hasSyncedOnOpenRef.current || user === null || todaySteps === 0) {
+      return;
+    }
+
+    hasSyncedOnOpenRef.current = true;
+    void syncDailySnapshotToFirestore(latestSyncSnapshotRef.current);
+  }, [syncDailySnapshotToFirestore, todaySteps, user]);
+
+  useEffect(() => {
+    let appState = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      const wasBackgrounded = appState === 'background' || appState === 'inactive';
+      const willBackground = nextAppState === 'background' || nextAppState === 'inactive';
+
+      if ((wasBackgrounded && nextAppState === 'active') || willBackground) {
+        void syncDailySnapshotToFirestore(latestSyncSnapshotRef.current);
+      }
+
+      appState = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [syncDailySnapshotToFirestore]);
+
+  const handleRefreshSteps = async (): Promise<void> => {
+    const message = await refreshSteps();
+    showToast(message, 'success');
+    setProgressResetKey((currentKey) => currentKey + 1);
+    setStepReplayKey((currentKey) => currentKey + 1);
+  };
+
+  const handleSaveToFirestore = async (): Promise<void> => {
+    setIsSavingToFirestore(true);
+    await syncDailySnapshotToFirestore(latestSyncSnapshotRef.current, { notify: true, showNoChanges: true });
     setIsSavingToFirestore(false);
-    showServerToast(result.message, result.ok ? 'standard' : 'error');
   };
 
   const showToast = (message: string, variant: ToastMessageItem['variant'] = 'success'): void => {
@@ -221,18 +250,18 @@ export default function HomeScreen() {
         <View style={styles.sourcePanel}>
           <View style={styles.sourceHeader}>
             <Text style={styles.sourceTitle}>Health data source</Text>
-            <Text style={styles.sourceSubtitle}>Combined view uses the best available source, with system health data shown beside it.</Text>
+            <Text style={styles.sourceSubtitle}>Combined view uses the best available source without starting duplicate health readers.</Text>
           </View>
           <View style={styles.sourceGrid}>
             <StatCard label="Combined" value={todaySteps.toLocaleString()} />
-            <StatCard label="System data" value={hasSystemTotal ? systemSteps.toLocaleString() : 'No data'} />
-            <StatCard label="System source" value={getSourceLabel(systemSource)} />
-            <StatCard label="System synced" value={formatSyncTime(systemLastSyncedAt)} />
+            <StatCard label="Health total" value={isSystemTotalAvailable ? todaySteps.toLocaleString() : 'No data'} />
+            <StatCard label="Health source" value={getSourceLabel(source)} />
+            <StatCard label="Health synced" value={formatSyncTime(lastSyncedAt)} />
           </View>
           <View style={styles.sourceStatus}>
-            <Ionicons color={COLORS.primary} name={isSystemModeAvailable ? 'pulse-outline' : 'warning-outline'} size={18} />
+            <Ionicons color={COLORS.primary} name={isSystemTotalAvailable ? 'pulse-outline' : 'warning-outline'} size={18} />
             <Text style={styles.sourceStatusText}>
-              {isSystemRefreshing ? 'Refreshing system data...' : systemDebugMessage}
+              {debugMessage}
             </Text>
           </View>
         </View>
@@ -303,6 +332,13 @@ const formatSyncTime = (lastSyncedAt: string | null): string => {
 };
 
 type ExistingDailySteps = Awaited<ReturnType<typeof readDailyStepsFromFirestore>>[string];
+
+type DailySyncSnapshot = {
+  goal: number;
+  source: StepDataSource;
+  steps: number;
+  userId: string | null;
+};
 
 type ComparableDailySteps = {
   challengeSessionCount: number;

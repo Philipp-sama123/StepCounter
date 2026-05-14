@@ -71,6 +71,13 @@ const RootNavigator = () => {
         }}
       />
       <Tabs.Screen
+        name="debug"
+        options={{
+          title: 'Debug',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="bug-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="challenge-history"
         options={{
           title: 'Sessions',

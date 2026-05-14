@@ -33,6 +33,11 @@ export const ToastStack = ({ messages, onHide, placement = 'top' }: ToastStackPr
 const ToastItem = ({ index, item, onHide, placement }: ToastItemProps) => {
   const translateY = useRef(new Animated.Value(getInitialOffset(placement))).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const onHideRef = useRef(onHide);
+
+  useEffect(() => {
+    onHideRef.current = onHide;
+  }, [onHide]);
 
   useEffect(() => {
     translateY.setValue(getInitialOffset(placement));
@@ -64,13 +69,13 @@ const ToastItem = ({ index, item, onHide, placement }: ToastItemProps) => {
           toValue: 0,
           useNativeDriver: true,
         }),
-      ]).start(() => onHide(item.id));
+      ]).start(() => onHideRef.current(item.id));
     }, 5000);
 
     return () => {
       clearTimeout(hideTimer);
     };
-  }, [item.id, onHide, opacity, placement, translateY]);
+  }, [item.id, opacity, placement, translateY]);
 
   const stackPosition = getStackPosition(placement, index);
 

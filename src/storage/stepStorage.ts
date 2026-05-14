@@ -190,6 +190,26 @@ export const saveChallengeSession = async (date: string, session: ChallengeSessi
   }
 };
 
+export const mergeChallengeSessionsForDate = async (date: string, sessions: ChallengeSession[]): Promise<void> => {
+  try {
+    const key = getChallengeKey(date);
+    const existing = await AsyncStorage.getItem(key);
+    const storedSessions: ChallengeSession[] = existing ? JSON.parse(existing) : [];
+    const sessionMap = new Map<string, ChallengeSession>();
+
+    [...storedSessions, ...sessions].forEach((session) => {
+      sessionMap.set(`${session.startedAt}-${session.endedAt}`, session);
+    });
+
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify([...sessionMap.values()].sort((left, right) => new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime())),
+    );
+  } catch (error) {
+    console.warn(`Unable to merge challenge sessions for ${date}.`, error);
+  }
+};
+
 export const readChallengeSessions = async (date: string): Promise<ChallengeSession[]> => {
   try {
     const key = getChallengeKey(date);

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { RevealView } from '../src/components/RevealView';
 import { COLORS } from '../src/constants';
 import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
 import { StepDataSource } from '../src/health/types';
@@ -166,7 +167,7 @@ export default function DebugScreen() {
           <Ionicons color={COLORS.challenge} name="bug-outline" size={28} />
         </View>
 
-        <View style={styles.referencePanel}>
+        <RevealView style={styles.referencePanel}>
           <Text style={styles.sectionTitle}>Step references</Text>
           <Text style={styles.sectionText}>Compare the live pedometer value with local cache and system health data.</Text>
           <View style={styles.referenceGrid}>
@@ -179,13 +180,23 @@ export default function DebugScreen() {
             />
           </View>
           <Text style={styles.syncedText}>{`Checked ${formatSyncTime(references.syncedAt)} · app source ${getSourceLabel(source)}`}</Text>
-        </View>
+        </RevealView>
 
-        <PedometerConsole log={sensorLog} />
-        <SensorConsole available={accelerometerAvailable} description="Acceleration on x/y/z in g. 1g is roughly Earth gravity." log={accelerometerLog} title="Accelerometer" />
-        <SensorConsole available={gyroscopeAvailable} description="Rotation speed around x/y/z in radians per second." log={gyroscopeLog} title="Gyroscope" />
-        <SensorConsole available={deviceMotionAvailable} description="Combined acceleration/orientation stream when available." log={deviceMotionLog} title="Device motion" />
-        <SensorConsole available={magnetometerAvailable} description="Magnetic field strength in microtesla, useful for orientation context." log={magnetometerLog} title="Magnetometer" />
+        <RevealView delay={60}>
+          <PedometerConsole log={sensorLog} />
+        </RevealView>
+        <RevealView delay={110}>
+          <SensorConsole available={accelerometerAvailable} description="Acceleration on x/y/z in g. 1g is roughly Earth gravity." log={accelerometerLog} title="Accelerometer" />
+        </RevealView>
+        <RevealView delay={160}>
+          <SensorConsole available={gyroscopeAvailable} description="Rotation speed around x/y/z in radians per second." log={gyroscopeLog} title="Gyroscope" />
+        </RevealView>
+        <RevealView delay={210}>
+          <SensorConsole available={deviceMotionAvailable} description="Combined acceleration/orientation stream when available." log={deviceMotionLog} title="Device motion" />
+        </RevealView>
+        <RevealView delay={260}>
+          <SensorConsole available={magnetometerAvailable} description="Magnetic field strength in microtesla, useful for orientation context." log={magnetometerLog} title="Magnetometer" />
+        </RevealView>
 
         <Text style={styles.debugText}>{debugMessage}</Text>
       </ScrollView>

@@ -9,6 +9,7 @@ import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
 import { ProgressRing } from '../src/components/ProgressRing';
+import { RevealView } from '../src/components/RevealView';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
@@ -185,7 +186,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.hero}>
+        <RevealView replayKey={stepReplayKey} style={styles.hero}>
           <ProgressRing goal={goal} resetAnimationKey={progressResetKey} steps={todaySteps} />
           <View style={styles.stepBlock}>
             <AnimatedStepCount replayKey={stepReplayKey} steps={todaySteps} style={styles.stepCount} />
@@ -228,16 +229,16 @@ export default function HomeScreen() {
               <Text style={styles.goalBannerText}>Daily goal reached. Beautiful work.</Text>
             </View>
           ) : null}
-        </View>
+        </RevealView>
 
-        <View style={styles.statsGrid}>
+        <RevealView delay={80} replayKey={stepReplayKey} style={styles.statsGrid}>
           <StatCard label="Progress" value={`${progressPercent.toFixed(2)}%`} />
           <StatCard label="Remaining" value={remainingSteps === 0 ? 'Done' : remainingSteps.toLocaleString()} />
           <StatCard label="Source" value={getSourceLabel(source)} />
           <StatCard label="Synced" value={formatSyncTime(lastSyncedAt)} />
-        </View>
+        </RevealView>
 
-        <View style={styles.syncPanel}>
+        <RevealView delay={140} replayKey={stepReplayKey} style={styles.syncPanel}>
           <View style={styles.syncIcon}>
             <Ionicons color={COLORS.primary} name={isSystemTotalAvailable ? 'fitness-outline' : 'cloud-download-outline'} size={20} />
           </View>
@@ -245,9 +246,9 @@ export default function HomeScreen() {
             <Text style={styles.syncTitle}>{isSystemTotalAvailable ? 'Health data connected' : 'Google Fit sync'}</Text>
             <Text style={styles.syncText}>{debugMessage}</Text>
           </View>
-        </View>
+        </RevealView>
 
-        <View style={styles.sourcePanel}>
+        <RevealView delay={190} replayKey={stepReplayKey} style={styles.sourcePanel}>
           <View style={styles.sourceHeader}>
             <Text style={styles.sourceTitle}>Health data source</Text>
             <Text style={styles.sourceSubtitle}>Combined view uses the best available source without starting duplicate health readers.</Text>
@@ -264,7 +265,7 @@ export default function HomeScreen() {
               {debugMessage}
             </Text>
           </View>
-        </View>
+        </RevealView>
       </ScrollView>
       <ToastStack messages={toastMessages} onHide={hideToast} />
       <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { RevealView } from '../src/components/RevealView';
 import { StepTrendChart } from '../src/components/StepTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import {
@@ -225,7 +226,7 @@ export default function HistoryScreen() {
           </AnimatedPressable>
         </View>
 
-        <View style={styles.chartSurface}>
+        <RevealView replayKey={graphReplayKey} style={styles.chartSurface}>
           <StepTrendChart
             animationKey={graphReplayKey}
             goal={goal}
@@ -234,24 +235,24 @@ export default function HistoryScreen() {
             paceByDate={paceByDate}
             sessionSums={sessionSums}
           />
-        </View>
+        </RevealView>
 
-        <View style={styles.metricGrid}>
+        <RevealView delay={80} replayKey={graphReplayKey} style={styles.metricGrid}>
           <MetricCard label="Weekly total" value={weeklyTotal.toLocaleString()} />
           <MetricCard label="Daily average" value={average.toLocaleString()} />
           <MetricCard label="Goal days" value={`${goalDays}/${history.length}`} />
           <MetricCard label="Challenge logged" value={challengeTotal.toLocaleString()} />
-        </View>
+        </RevealView>
 
-        <View style={styles.insight}>
+        <RevealView delay={130} replayKey={graphReplayKey} style={styles.insight}>
           <Text style={styles.insightLabel}>Best day</Text>
           <Text style={styles.insightValue}>
             {bestDay === null || bestDay.steps === 0 ? 'No steps yet' : `${bestDay.dayName} · ${bestDay.steps.toLocaleString()} steps`}
           </Text>
           <Text style={styles.insightNote}>Daily totals use stored steps, with challenge sessions as a minimum if local daily history is lower.</Text>
-        </View>
+        </RevealView>
 
-        <View style={styles.list}>
+        <RevealView delay={180} replayKey={graphReplayKey} style={styles.list}>
           {history.map((entry) => {
             const progress = Math.min(1, entry.steps / goal);
             const reachedGoal = entry.steps >= goal;
@@ -295,16 +296,16 @@ export default function HistoryScreen() {
               </AnimatedPressable>
             );
           })}
-        </View>
+        </RevealView>
           </>
         ) : (
           <>
-            <View style={styles.metricGrid}>
+            <RevealView replayKey={graphReplayKey} style={styles.metricGrid}>
               <MetricCard label="Sessions" value={sessions.length.toLocaleString()} />
               <MetricCard label="Session steps" value={totalSessionSteps.toLocaleString()} />
               <MetricCard label="Time" value={formatDuration(totalSessionDuration)} />
               <MetricCard label="Best" value={bestSession === null ? '0' : bestSession.steps.toLocaleString()} />
-            </View>
+            </RevealView>
 
             <Animated.View
               style={[
@@ -374,7 +375,7 @@ export default function HistoryScreen() {
               ) : null}
             </Animated.View>
 
-            <View style={styles.list}>
+            <RevealView delay={120} replayKey={graphReplayKey} style={styles.list}>
               {sessions.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Text style={styles.emptyTitle}>No challenge sessions yet</Text>
@@ -412,7 +413,7 @@ export default function HistoryScreen() {
                   </AnimatedPressable>
                 ))
               )}
-            </View>
+            </RevealView>
           </>
         )}
       </ScrollView>

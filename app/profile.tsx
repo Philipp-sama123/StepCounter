@@ -9,6 +9,7 @@ import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { GoalModal } from '../src/components/GoalModal';
 import { ProfileModal } from '../src/components/ProfileModal';
+import { RevealView } from '../src/components/RevealView';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { WeightTrendChart } from '../src/components/WeightTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
@@ -150,14 +151,14 @@ export default function ProfileScreen() {
           </AnimatedPressable>
         </View>
 
-        <View style={styles.metricGrid}>
+        <RevealView replayKey={graphReplayKey} style={styles.metricGrid}>
           <MetricCard label="Daily goal" value={goal.toLocaleString()} />
           <MetricCard label="Height" value={bodyProfile?.heightCm ? `${bodyProfile.heightCm.toLocaleString()} cm` : '-'} />
           <MetricCard label="Weight" value={latestWeight > 0 ? `${latestWeight.toLocaleString()} kg` : '-'} />
           <MetricCard label="BMI" value={bmi > 0 ? bmi.toFixed(1) : '-'} />
-        </View>
+        </RevealView>
 
-        <View style={styles.actionPanel}>
+        <RevealView delay={80} replayKey={graphReplayKey} style={styles.actionPanel}>
           <AnimatedPressable
             accessibilityLabel="Edit profile"
             accessibilityRole="button"
@@ -176,9 +177,11 @@ export default function ProfileScreen() {
             <Ionicons color={COLORS.action} name="flag-outline" size={19} />
             <Text style={styles.secondaryActionText}>Daily step goal</Text>
           </AnimatedPressable>
-        </View>
+        </RevealView>
 
-        <WeightTrendChart animationKey={graphReplayKey} entries={weightEntries} profile={bodyProfile} />
+        <RevealView delay={140} replayKey={graphReplayKey}>
+          <WeightTrendChart animationKey={graphReplayKey} entries={weightEntries} profile={bodyProfile} />
+        </RevealView>
       </ScrollView>
 
       <GoalModal

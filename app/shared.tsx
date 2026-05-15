@@ -12,7 +12,12 @@ import { COLORS } from '../src/constants';
 import { useAuth } from '../src/auth/AuthContext';
 import { readSharedProfile, SharedProfileData } from '../src/firebase/shareSync';
 import { readChallengeSessionsFromFirestore, readDailyStepsFromFirestore, StoredChallengeSession } from '../src/firebase/stepsSync';
-import { readImportedShareCode } from '../src/storage/shareStorage';
+import {
+  ImportedShareProfile,
+  readImportedShareCode,
+  readImportedShareProfiles,
+  saveSelectedImportedShareCode,
+} from '../src/storage/shareStorage';
 import { readLastSevenDays, readRecentChallengeSessions, StepHistoryEntry } from '../src/storage/stepStorage';
 
 type GraphMode = 'steps' | 'challenges';
@@ -21,10 +26,12 @@ const COMPARISON_DAYS = 14;
 export default function SharedHistoryScreen() {
   const { user } = useAuth();
   const [shareCode, setShareCode] = useState<string | null>(null);
+  const [importedProfiles, setImportedProfiles] = useState<ImportedShareProfile[]>([]);
   const [sharedProfile, setSharedProfile] = useState<SharedProfileData | null>(null);
   const [currentEntries, setCurrentEntries] = useState<StepHistoryEntry[]>([]);
   const [currentSessions, setCurrentSessions] = useState<StoredChallengeSession[]>([]);
   const [graphMode, setGraphMode] = useState<GraphMode>('steps');
+  const [isSelectorOpen, setIsSelectorOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const refreshSpin = useRef(new Animated.Value(0)).current;
 
@@ -49,13 +56,15 @@ export default function SharedHistoryScreen() {
     };
   }, [isLoading, refreshSpin]);
 
-  const loadSharedProfile = useCallback(async (): Promise<void> => {
+  const loadSharedProfile = useCallback(async (codeOverride?: string): Promise<void> => {
     setIsLoading(true);
-    const [code, localEntries, localSessions] = await Promise.all([
+    const [storedProfiles, storedCode, localEntries, localSessions] = await Promise.all([
+      readImportedShareProfiles(),
       readImportedShareCode(),
       readLastSevenDays(),
       readRecentChallengeSessions(),
     ]);
+    const selectedCode = codeOverride ?? storedCode ?? storedProfiles[0]?.code ?? null;
     const dates = getRecentDateEntries(COMPARISON_DAYS).map((entry) => entry.date);
     const [remoteEntriesByDate, remoteSessions] = user === null
       ? [{}, []]
@@ -66,10 +75,17 @@ export default function SharedHistoryScreen() {
 
     setCurrentEntries(mergeCurrentDailyEntries(getRecentDateEntries(COMPARISON_DAYS), localEntries, remoteEntriesByDate));
     setCurrentSessions(mergeCurrentSessions(localSessions, remoteSessions));
-    setShareCode(code);
-    setSharedProfile(code === null ? null : await readSharedProfile(code));
+    setImportedProfiles(storedProfiles);
+    setShareCode(selectedCode);
+    setSharedProfile(selectedCode === null ? null : await readSharedProfile(selectedCode));
     setIsLoading(false);
   }, [user]);
+
+  const handleSelectProfile = async (code: string): Promise<void> => {
+    setIsSelectorOpen(false);
+    setShareCode(await saveSelectedImportedShareCode(code));
+    await loadSharedProfile(code);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -140,8 +156,43 @@ export default function SharedHistoryScreen() {
         {sharedProfile !== null ? (
           <>
             <RevealView style={styles.codePanel}>
-              <Text style={styles.codeLabel}>Imported code</Text>
-              <Text style={styles.codeValue}>{sharedProfile.code}</Text>
+              <View style={styles.selectorHeader}>
+                <View>
+                  <Text style={styles.codeLabel}>Selected imported profile</Text>
+                  <Text style={styles.codeValue}>{sharedProfile.displayName}</Text>
+                  <Text style={styles.codeMeta}>{sharedProfile.code}</Text>
+                </View>
+                <AnimatedPressable
+                  accessibilityLabel="Select imported profile"
+                  accessibilityRole="button"
+                  onPress={() => setIsSelectorOpen((isOpen) => !isOpen)}
+                  style={styles.dropdownButton}
+                >
+                  <Text style={styles.dropdownButtonText}>Select</Text>
+                  <Ionicons color={COLORS.challenge} name={isSelectorOpen ? 'chevron-up' : 'chevron-down'} size={18} />
+                </AnimatedPressable>
+              </View>
+              {isSelectorOpen ? (
+                <View style={styles.dropdownList}>
+                  {importedProfiles.map((profile) => (
+                    <AnimatedPressable
+                      accessibilityLabel={`Select ${profile.displayName}`}
+                      accessibilityRole="button"
+                      key={profile.code}
+                      onPress={() => {
+                        void handleSelectProfile(profile.code);
+                      }}
+                      style={[styles.dropdownItem, profile.code === shareCode && styles.dropdownItemActive]}
+                    >
+                      <View style={styles.dropdownItemTextWrap}>
+                        <Text style={styles.dropdownItemName}>{profile.displayName}</Text>
+                        <Text style={styles.dropdownItemCode}>{profile.code}</Text>
+                      </View>
+                      {profile.code === shareCode ? <Ionicons color={COLORS.challenge} name="checkmark-circle" size={19} /> : null}
+                    </AnimatedPressable>
+                  ))}
+                </View>
+              ) : null}
             </RevealView>
 
             <RevealView delay={70} style={styles.metricGrid}>
@@ -584,7 +635,14 @@ const styles = StyleSheet.create({
     borderColor: COLORS.challenge,
     borderRadius: 8,
     borderWidth: 1,
+    gap: 12,
     padding: 14,
+  },
+  selectorHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
   },
   codeLabel: {
     color: COLORS.challenge,
@@ -594,8 +652,65 @@ const styles = StyleSheet.create({
   },
   codeValue: {
     color: COLORS.challenge,
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '900',
+  },
+  codeMeta: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  dropdownButton: {
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.challenge,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  dropdownButtonText: {
+    color: COLORS.challenge,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  dropdownList: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    alignItems: 'center',
+    borderBottomColor: COLORS.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    minHeight: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dropdownItemActive: {
+    backgroundColor: COLORS.challengeSoft,
+  },
+  dropdownItemTextWrap: {
+    flex: 1,
+  },
+  dropdownItemName: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  dropdownItemCode: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
   },
   metricGrid: {
     flexDirection: 'row',

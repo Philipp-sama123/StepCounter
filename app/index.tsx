@@ -19,6 +19,7 @@ import {
   syncDailySteps,
 } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
+import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import { getTodayString, readChallengeSessions, readGoal } from '../src/storage/stepStorage';
 
@@ -34,6 +35,7 @@ export default function HomeScreen() {
     status,
     todaySteps,
   } = useStepCounter('combined');
+  const calculatedSteps = useCalculatedStepCounter();
   const { user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [progressResetKey, setProgressResetKey] = useState(0);
@@ -264,6 +266,39 @@ export default function HomeScreen() {
             <Text style={styles.sourceStatusText}>
               {debugMessage}
             </Text>
+          </View>
+        </RevealView>
+
+        <RevealView delay={240} replayKey={stepReplayKey} style={styles.calculatedPanel}>
+          <View style={styles.calculatedHeader}>
+            <View>
+              <Text style={styles.calculatedEyebrow}>Experimental detector</Text>
+              <Text style={styles.calculatedTitle}>Calculated steps</Text>
+            </View>
+            <Ionicons color={COLORS.challenge} name="analytics-outline" size={22} />
+          </View>
+          <View style={styles.calculatedHero}>
+            <ProgressRing
+              caption="of daily goal"
+              goal={goal}
+              progressColor={COLORS.challenge}
+              resetAnimationKey={progressResetKey}
+              steps={calculatedSteps.steps}
+            />
+            <View style={styles.stepBlock}>
+              <AnimatedStepCount replayKey={stepReplayKey} steps={calculatedSteps.steps} style={styles.calculatedStepCount} />
+              <Text style={styles.stepLabel}>calculated today</Text>
+            </View>
+          </View>
+          <View style={styles.statsGrid}>
+            <StatCard label="Cadence" value={`${calculatedSteps.cadenceStepsPerMinute}/min`} />
+            <StatCard label="Confidence" value={`${calculatedSteps.confidence}%`} />
+            <StatCard label="Distance" value={`${calculatedSteps.distanceKm.toFixed(2)} km`} />
+            <StatCard label="Calories" value={calculatedSteps.caloriesKcal > 0 ? `${calculatedSteps.caloriesKcal} kcal` : '-'} />
+          </View>
+          <View style={styles.calculatedStatus}>
+            <Ionicons color={calculatedSteps.isAvailable ? COLORS.challenge : COLORS.warning} name={calculatedSteps.isAvailable ? 'pulse-outline' : 'warning-outline'} size={18} />
+            <Text style={styles.calculatedStatusText}>{calculatedSteps.debugMessage}</Text>
           </View>
         </RevealView>
       </ScrollView>
@@ -565,6 +600,55 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   sourceStatusText: {
+    color: COLORS.text,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  calculatedPanel: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.challenge,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 14,
+    padding: 14,
+  },
+  calculatedHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  calculatedEyebrow: {
+    color: COLORS.challenge,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  calculatedTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  calculatedHero: {
+    alignItems: 'center',
+    gap: 14,
+  },
+  calculatedStepCount: {
+    color: COLORS.challenge,
+    fontSize: 48,
+    fontWeight: '900',
+  },
+  calculatedStatus: {
+    alignItems: 'center',
+    backgroundColor: COLORS.challengeSoft,
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 9,
+    padding: 12,
+  },
+  calculatedStatusText: {
     color: COLORS.text,
     flex: 1,
     fontSize: 12,

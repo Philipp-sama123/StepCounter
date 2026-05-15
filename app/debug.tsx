@@ -7,9 +7,11 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RevealView } from '../src/components/RevealView';
+import { StepTrendChart } from '../src/components/StepTrendChart';
 import { COLORS } from '../src/constants';
 import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
 import { StepDataSource } from '../src/health/types';
+import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import { getTodayString, readStepsForDate } from '../src/storage/stepStorage';
 
@@ -29,6 +31,7 @@ type StepReferenceState = {
 
 export default function DebugScreen() {
   const { debugMessage, sensorLog, source, todaySteps } = useStepCounter('live');
+  const calculatedSteps = useCalculatedStepCounter();
   const [references, setReferences] = useState<StepReferenceState>({
     localSteps: 0,
     systemReason: 'Loading references...',
@@ -186,15 +189,39 @@ export default function DebugScreen() {
           <PedometerConsole log={sensorLog} />
         </RevealView>
         <RevealView delay={110}>
-          <SensorConsole available={accelerometerAvailable} description="Acceleration on x/y/z in g. 1g is roughly Earth gravity." log={accelerometerLog} title="Accelerometer" />
+          <View style={styles.consoleSection}>
+            <ConsoleHeader meta="saved locally" title="Calculated step history" />
+            <Text style={styles.sectionText}>Experimental acceleration and rotation-based steps, stored separately from Health Connect and live pedometer totals.</Text>
+            <View style={styles.calculatedSummaryGrid}>
+              <ReferenceCard label="Calculated" value={calculatedSteps.steps.toLocaleString()} />
+              <ReferenceCard label="Cadence" value={`${calculatedSteps.cadenceStepsPerMinute}/min`} />
+              <ReferenceCard label="Confidence" value={`${calculatedSteps.confidence}%`} />
+            </View>
+            <StepTrendChart
+              animationKey={calculatedSteps.steps}
+              goal={Math.max(1, references.systemSteps ?? todaySteps)}
+              history={calculatedSteps.history}
+            />
+            <View style={styles.logBox}>
+              {calculatedSteps.log.length > 0 ? calculatedSteps.log.slice(0, 10).map((entry, index) => (
+                <View key={`${entry.timestamp}-${entry.steps}-${index}`} style={styles.logRow}>
+                  <Text style={styles.logTime}>{formatLogTime(entry.timestamp)}</Text>
+                  <Text style={styles.logLine}>{`calc ${entry.steps.toLocaleString()}  acc ${formatAxis(entry.accelerationG)}g  rot ${formatAxis(entry.rotationRadPerSecond)} rad/s`}</Text>
+                </View>
+              )) : <Text style={styles.logEmpty}>waiting for calculated step events...</Text>}
+            </View>
+          </View>
         </RevealView>
         <RevealView delay={160}>
-          <SensorConsole available={gyroscopeAvailable} description="Rotation speed around x/y/z in radians per second." log={gyroscopeLog} title="Gyroscope" />
+          <SensorConsole available={accelerometerAvailable} description="Acceleration on x/y/z in g. 1g is roughly Earth gravity." log={accelerometerLog} title="Accelerometer" />
         </RevealView>
         <RevealView delay={210}>
-          <SensorConsole available={deviceMotionAvailable} description="Combined acceleration/orientation stream when available." log={deviceMotionLog} title="Device motion" />
+          <SensorConsole available={gyroscopeAvailable} description="Rotation speed around x/y/z in radians per second." log={gyroscopeLog} title="Gyroscope" />
         </RevealView>
         <RevealView delay={260}>
+          <SensorConsole available={deviceMotionAvailable} description="Combined acceleration/orientation stream when available." log={deviceMotionLog} title="Device motion" />
+        </RevealView>
+        <RevealView delay={310}>
           <SensorConsole available={magnetometerAvailable} description="Magnetic field strength in microtesla, useful for orientation context." log={magnetometerLog} title="Magnetometer" />
         </RevealView>
 
@@ -458,6 +485,11 @@ const styles = StyleSheet.create({
     color: COLORS.challenge,
     fontSize: 11,
     fontWeight: '800',
+  },
+  calculatedSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   logBox: {
     backgroundColor: '#08110D',

@@ -210,7 +210,7 @@ export default function ProfileScreen() {
       return;
     }
 
-    setImportCode(await saveImportedShareCode(normalizedCode));
+    setImportCode(await saveImportedShareCode(normalizedCode, sharedProfile.displayName));
     showToast(`Imported ${sharedProfile.displayName}.`, 'standard');
   };
 

@@ -71,6 +71,13 @@ const RootNavigator = () => {
         }}
       />
       <Tabs.Screen
+        name="shared"
+        options={{
+          title: 'Shared',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="people-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="debug"
         options={{
           title: 'Debug',

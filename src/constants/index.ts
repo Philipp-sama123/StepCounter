@@ -44,3 +44,28 @@ export const COLORS = {
   barSoft: '#D8E6EB',
   danger: '#A23B3B',
 } as const;
+
+export const THEME = {
+  color: {
+    appBackground: COLORS.background,
+    card: COLORS.surface,
+    cardBorder: COLORS.border,
+    danger: COLORS.danger,
+    primary: COLORS.primary,
+    primaryMuted: COLORS.primarySoft,
+    primaryText: COLORS.text,
+    secondaryText: COLORS.mutedText,
+    success: COLORS.success,
+    successMuted: COLORS.successSoft,
+    warning: COLORS.warning,
+    workout: COLORS.challenge,
+    workoutMuted: COLORS.challengeSoft,
+  },
+  radius: {
+    control: 8,
+    panel: 8,
+  },
+  spacing: {
+    screenHorizontal: 24,
+  },
+} as const;

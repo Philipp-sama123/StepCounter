@@ -12,22 +12,41 @@ import { getTodayString, StepHistoryEntry } from '../storage/stepStorage';
 type CalculatedStepLogEntry = {
   accelerationG: number;
   confidence: number;
+  motionG: number;
   rotationRadPerSecond: number;
   steps: number;
+  thresholdG: number;
   timestamp: string;
 };
+
+export type DetectorSample = {
+  elapsedMsSinceStep: number | null;
+  motionG: number;
+  rotationRadPerSecond: number;
+  thresholdG: number;
+  timestamp: string;
+};
+
+type DetectorDecision = 'accepted' | 'rejected' | 'waiting';
 
 export type UseCalculatedStepCounterResult = {
   cadenceStepsPerMinute: number;
   caloriesKcal: number;
   confidence: number;
+  detectorDecision: DetectorDecision;
+  detectorReason: string;
   debugMessage: string;
   distanceKm: number;
+  elapsedMsSinceStep: number | null;
   history: StepHistoryEntry[];
   isAvailable: boolean;
   lastAccelerationG: number;
+  lastMotionG: number;
   lastRotationRadPerSecond: number;
+  motionThresholdG: number;
   log: CalculatedStepLogEntry[];
+  samples: DetectorSample[];
+  sampleCount: number;
   steps: number;
 };
 
@@ -35,6 +54,7 @@ const ACCELEROMETER_INTERVAL_MS = 80;
 const GYROSCOPE_INTERVAL_MS = 120;
 const MIN_STEP_INTERVAL_MS = 260;
 const MAX_STEP_INTERVAL_MS = 1400;
+const SEQUENCE_RESET_INTERVAL_MS = 2200;
 const WARMUP_SAMPLE_COUNT = 8;
 const HISTORY_DAYS = 14;
 
@@ -49,7 +69,14 @@ export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
   const [confidence, setConfidence] = useState(0);
   const [distanceKm, setDistanceKm] = useState(0);
   const [caloriesKcal, setCaloriesKcal] = useState(0);
+  const [lastMotionG, setLastMotionG] = useState(0);
+  const [motionThresholdG, setMotionThresholdG] = useState(0);
+  const [elapsedMsSinceStep, setElapsedMsSinceStep] = useState<number | null>(null);
+  const [detectorDecision, setDetectorDecision] = useState<DetectorDecision>('waiting');
+  const [detectorReason, setDetectorReason] = useState('Waiting for enough sensor samples.');
+  const [sampleCount, setSampleCount] = useState(0);
   const [log, setLog] = useState<CalculatedStepLogEntry[]>([]);
+  const [samples, setSamples] = useState<DetectorSample[]>([]);
   const stepsRef = useRef(0);
   const dateRef = useRef(getTodayString());
   const gravityBaselineRef = useRef(1);
@@ -140,19 +167,42 @@ export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
       const adaptiveThreshold = getAdaptiveThreshold(profileRef.current.heightCm, rotationMagnitude);
       const isPeak = previousMotionRef.current <= adaptiveThreshold && motion > adaptiveThreshold;
       const hasPreviousStep = lastStepAtRef.current > 0;
+      const canStartNewSequence = !hasPreviousStep || elapsedMs > SEQUENCE_RESET_INTERVAL_MS;
       const hasHumanTiming = hasPreviousStep
-        ? elapsedMs >= MIN_STEP_INTERVAL_MS && elapsedMs <= MAX_STEP_INTERVAL_MS
+        ? canStartNewSequence || (elapsedMs >= MIN_STEP_INTERVAL_MS && elapsedMs <= MAX_STEP_INTERVAL_MS)
         : sampleCountRef.current > WARMUP_SAMPLE_COUNT;
       const hasEnoughStillness = rotationMagnitude < 7.5;
+      const rejectReason = getRejectReason({
+        hasEnoughStillness,
+        hasHumanTiming,
+        isPeak,
+        sampleCount: sampleCountRef.current,
+      });
 
       setLastAccelerationG(magnitudeG);
+      setLastMotionG(motion);
+      setMotionThresholdG(adaptiveThreshold);
+      setElapsedMsSinceStep(hasPreviousStep ? elapsedMs : null);
+      setSampleCount(sampleCountRef.current);
+      setSamples((currentSamples) => [...currentSamples, {
+        elapsedMsSinceStep: hasPreviousStep ? elapsedMs : null,
+        motionG: motion,
+        rotationRadPerSecond: rotationMagnitude,
+        thresholdG: adaptiveThreshold,
+        timestamp: new Date().toISOString(),
+      }].slice(-48));
       previousMotionRef.current = motion;
 
       if (!isPeak || !hasHumanTiming || !hasEnoughStillness) {
+        setDetectorDecision('rejected');
+        setDetectorReason(rejectReason);
         return;
       }
 
       lastStepAtRef.current = now;
+      if (canStartNewSequence) {
+        stepTimestampsRef.current = [];
+      }
       const nextSteps = stepsRef.current + 1;
       stepsRef.current = nextSteps;
       const nextConfidence = getConfidence(motion, adaptiveThreshold, rotationMagnitude);
@@ -160,13 +210,17 @@ export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
 
       setSteps(nextSteps);
       setConfidence(nextConfidence);
+      setDetectorDecision('accepted');
+      setDetectorReason('Accepted: motion crossed the threshold, timing looked like walking, and rotation was calm enough.');
       setCadenceStepsPerMinute(updateCadence(now, stepTimestampsRef.current));
       updateBodyEstimates(nextSteps);
       setLog((currentLog) => [{
         accelerationG: magnitudeG,
         confidence: nextConfidence,
+        motionG: motion,
         rotationRadPerSecond: rotationMagnitude,
         steps: nextSteps,
+        thresholdG: adaptiveThreshold,
         timestamp: nextTimestamp,
       }, ...currentLog].slice(0, 20));
 
@@ -195,15 +249,52 @@ export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
     cadenceStepsPerMinute,
     caloriesKcal,
     confidence,
+    detectorDecision,
+    detectorReason,
     debugMessage,
     distanceKm,
+    elapsedMsSinceStep,
     history,
     isAvailable,
     lastAccelerationG,
+    lastMotionG,
     lastRotationRadPerSecond,
+    motionThresholdG,
     log,
+    samples,
+    sampleCount,
     steps,
   };
+};
+
+const getRejectReason = ({
+  hasEnoughStillness,
+  hasHumanTiming,
+  isPeak,
+  sampleCount,
+}: {
+  hasEnoughStillness: boolean;
+  hasHumanTiming: boolean;
+  isPeak: boolean;
+  sampleCount: number;
+}): string => {
+  if (sampleCount <= WARMUP_SAMPLE_COUNT) {
+    return `Warming up sensor baseline (${sampleCount}/${WARMUP_SAMPLE_COUNT} samples).`;
+  }
+
+  if (!isPeak) {
+    return 'Rejected: movement did not cross the adaptive step threshold.';
+  }
+
+  if (!hasHumanTiming) {
+    return `Rejected: timing was too fast. A new sequence can start after ${SEQUENCE_RESET_INTERVAL_MS}ms.`;
+  }
+
+  if (!hasEnoughStillness) {
+    return 'Rejected: phone rotation was too chaotic, likely hand movement.';
+  }
+
+  return 'Rejected: sample did not look like a clean walking step.';
 };
 
 const getAdaptiveThreshold = (heightCm: number, rotationMagnitude: number): number => {

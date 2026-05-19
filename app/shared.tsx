@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
@@ -10,15 +10,18 @@ import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { RevealView } from '../src/components/RevealView';
 import { COLORS } from '../src/constants';
 import { useAuth } from '../src/auth/AuthContext';
-import { readSharedProfile, SharedProfileData } from '../src/firebase/shareSync';
+import { publishSharedProfile, readSharedProfile, SharedProfileData } from '../src/firebase/shareSync';
 import { readChallengeSessionsFromFirestore, readDailyStepsFromFirestore, StoredChallengeSession } from '../src/firebase/stepsSync';
+import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
+import { syncDailyStepSnapshot } from '../src/services/dailyStepSync';
 import {
   ImportedShareProfile,
   readImportedShareCode,
   readImportedShareProfiles,
+  saveImportedShareCode,
   saveSelectedImportedShareCode,
 } from '../src/storage/shareStorage';
-import { readLastSevenDays, readRecentChallengeSessions, StepHistoryEntry } from '../src/storage/stepStorage';
+import { getTodayString, readGoal, readLastSevenDays, readRecentChallengeSessions, readStepsForDate, StepHistoryEntry } from '../src/storage/stepStorage';
 
 type GraphMode = 'steps' | 'challenges';
 const COMPARISON_DAYS = 14;
@@ -58,27 +61,60 @@ export default function SharedHistoryScreen() {
 
   const loadSharedProfile = useCallback(async (codeOverride?: string): Promise<void> => {
     setIsLoading(true);
-    const [storedProfiles, storedCode, localEntries, localSessions] = await Promise.all([
-      readImportedShareProfiles(),
-      readImportedShareCode(),
-      readLastSevenDays(),
-      readRecentChallengeSessions(),
-    ]);
-    const selectedCode = codeOverride ?? storedCode ?? storedProfiles[0]?.code ?? null;
-    const dates = getRecentDateEntries(COMPARISON_DAYS).map((entry) => entry.date);
-    const [remoteEntriesByDate, remoteSessions] = user === null
-      ? [{}, []]
-      : await Promise.all([
-        readDailyStepsFromFirestore(user.uid, dates),
-        readChallengeSessionsFromFirestore(user.uid),
+    try {
+      const [storedProfiles, storedCode, localEntries, localSessions] = await Promise.all([
+        readImportedShareProfiles(),
+        readImportedShareCode(),
+        readLastSevenDays(),
+        readRecentChallengeSessions(),
       ]);
+      const selectedCode = codeOverride ?? storedCode ?? storedProfiles[0]?.code ?? null;
+      const dates = getRecentDateEntries(COMPARISON_DAYS).map((entry) => entry.date);
+      let [remoteEntriesByDate, remoteSessions] = user === null
+        ? [{}, []]
+        : await Promise.all([
+          readDailyStepsFromFirestore(user.uid, dates),
+          readChallengeSessionsFromFirestore(user.uid),
+        ]);
 
-    setCurrentEntries(mergeCurrentDailyEntries(getRecentDateEntries(COMPARISON_DAYS), localEntries, remoteEntriesByDate));
-    setCurrentSessions(mergeCurrentSessions(localSessions, remoteSessions));
-    setImportedProfiles(storedProfiles);
-    setShareCode(selectedCode);
-    setSharedProfile(selectedCode === null ? null : await readSharedProfile(selectedCode));
-    setIsLoading(false);
+      const selectedProfile = selectedCode === null ? null : await readSharedProfile(selectedCode);
+      const refreshedSelectedProfile = selectedProfile === null
+        ? null
+        : await refreshOwnSharedProfileSnapshot({
+          displayName: user?.displayName ?? user?.email?.split('@')[0] ?? selectedProfile.displayName,
+          profile: selectedProfile,
+          userId: user?.uid ?? null,
+        });
+
+      if (user !== null && refreshedSelectedProfile?.ownerId === user.uid) {
+        [remoteEntriesByDate, remoteSessions] = await Promise.all([
+          readDailyStepsFromFirestore(user.uid, dates),
+          readChallengeSessionsFromFirestore(user.uid),
+        ]);
+      }
+      const nextProfiles = selectedProfile === null
+        ? storedProfiles
+        : mergeImportedProfile(storedProfiles, {
+          code: refreshedSelectedProfile?.code ?? selectedProfile.code,
+          displayName: refreshedSelectedProfile?.displayName ?? selectedProfile.displayName,
+          importedAt: new Date().toISOString(),
+        });
+
+      if (refreshedSelectedProfile !== null) {
+        await saveImportedShareCode(refreshedSelectedProfile.code, refreshedSelectedProfile.displayName);
+      }
+
+      setCurrentEntries(mergeCurrentDailyEntries(getRecentDateEntries(COMPARISON_DAYS), localEntries, remoteEntriesByDate));
+      setCurrentSessions(mergeCurrentSessions(localSessions, remoteSessions));
+      setImportedProfiles(nextProfiles);
+      setShareCode(selectedCode);
+      setSharedProfile(refreshedSelectedProfile);
+    } catch (error) {
+      console.warn('Unable to load shared profile comparison.', error);
+      setSharedProfile(null);
+    } finally {
+      setIsLoading(false);
+    }
   }, [user]);
 
   const handleSelectProfile = async (code: string): Promise<void> => {
@@ -143,6 +179,14 @@ export default function SharedHistoryScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No imported profile yet</Text>
             <Text style={styles.emptyText}>Open Profile, enter a share code, then come back here to compare their history.</Text>
+          </View>
+        ) : null}
+
+        {isLoading && sharedProfile === null ? (
+          <View style={styles.emptyState}>
+            <ActivityIndicator color={COLORS.challenge} />
+            <Text style={styles.emptyTitle}>Loading shared history</Text>
+            <Text style={styles.emptyText}>Fetching the selected imported profile and your comparison data.</Text>
           </View>
         ) : null}
 
@@ -267,6 +311,56 @@ const MetricCard = ({ label, value, valueColor = COLORS.text }: { label: string;
     <Text style={[styles.metricValue, { color: valueColor }]}>{value}</Text>
   </View>
 );
+
+const refreshOwnSharedProfileSnapshot = async ({
+  displayName,
+  profile,
+  userId,
+}: {
+  displayName: string;
+  profile: SharedProfileData;
+  userId: string | null;
+}): Promise<SharedProfileData> => {
+  if (userId === null || profile.ownerId !== userId) {
+    return profile;
+  }
+
+  const today = getTodayString();
+  const [goal, localSteps, systemSteps] = await Promise.all([
+    readGoal(),
+    readStepsForDate(today),
+    readTodayStepsFromSystemHealth(),
+  ]);
+  const existingTodayEntry = profile.dailySteps.find((entry) => entry.date === today);
+  const steps = systemSteps.available ? systemSteps.steps : Math.max(localSteps, existingTodayEntry?.steps ?? 0);
+  const source = systemSteps.available ? systemSteps.source : existingTodayEntry?.source ?? 'unavailable';
+
+  if (steps > 0) {
+    const syncResult = await syncDailyStepSnapshot({
+      goal,
+      source,
+      steps,
+      userId,
+    });
+
+    if (!syncResult.ok) {
+      console.warn('Unable to refresh own daily steps before shared profile publish.', syncResult.message);
+    }
+  }
+
+  const publishResult = await publishSharedProfile({
+    code: profile.code,
+    displayName,
+    userId,
+  });
+
+  if (!publishResult.ok) {
+    console.warn('Unable to refresh own shared profile snapshot.', publishResult.message);
+    return profile;
+  }
+
+  return await readSharedProfile(profile.code) ?? profile;
+};
 
 type SharedTrendEntry = {
   currentValue: number;
@@ -536,6 +630,21 @@ const mergeCurrentSessions = (
   });
 
   return [...sessionsByKey.values()].sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
+};
+
+const mergeImportedProfile = (
+  profiles: ImportedShareProfile[],
+  nextProfile: ImportedShareProfile,
+): ImportedShareProfile[] => {
+  const profilesByCode = new Map<string, ImportedShareProfile>();
+
+  [nextProfile, ...profiles].forEach((profile) => {
+    if (!profilesByCode.has(profile.code)) {
+      profilesByCode.set(profile.code, profile);
+    }
+  });
+
+  return [...profilesByCode.values()].sort((left, right) => right.importedAt.localeCompare(left.importedAt));
 };
 
 const formatSignedNumber = (value: number): string => {

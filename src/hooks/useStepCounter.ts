@@ -12,6 +12,7 @@ import {
 } from '../storage/stepStorage';
 import { readTodayStepsFromSystemHealth } from '../health/stepsProvider';
 import { StepDataSource, StepTrackingMode } from '../health/types';
+import { getStepSourceSentenceLabel } from '../utils/stepSource';
 
 export type WalkingStatus = 'walking' | 'stopped' | 'unknown';
 
@@ -135,7 +136,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     await saveStepsForDate(today, result.steps);
     setStatus('stopped');
     setLastSyncedAt(syncedAt);
-    setDebugMessage(`Loaded ${result.steps.toLocaleString()} steps from ${getSourceLabel(result.source)}.`);
+    setDebugMessage(`Loaded ${result.steps.toLocaleString()} steps from ${getStepSourceSentenceLabel(result.source)}.`);
     setIsRefreshing(false);
     return result.steps;
   };
@@ -331,7 +332,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
           // For system and combined, refresh system health
           const loadedSteps = await syncSystemHealthSteps();
           if (loadedSteps !== null) {
-            return `Loaded ${loadedSteps.toLocaleString()} steps from ${getSourceLabel(source)}.`;
+            return `Loaded ${loadedSteps.toLocaleString()} steps from ${getStepSourceSentenceLabel(source)}.`;
           } else {
             return 'Unable to load health data. Check permissions.';
           }
@@ -350,20 +351,4 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     source,
     canRefresh: !(mode === 'live' && Platform.OS === 'android'),
   };
-};
-
-const getSourceLabel = (source: StepDataSource): string => {
-  if (source === 'apple-health') {
-    return 'Apple Health';
-  }
-
-  if (source === 'health-connect') {
-    return 'Health Connect';
-  }
-
-  if (source === 'live-sensor') {
-    return 'device sensors';
-  }
-
-  return 'health data';
 };

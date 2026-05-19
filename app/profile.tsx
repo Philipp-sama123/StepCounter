@@ -32,6 +32,7 @@ import {
 } from '../src/storage/profileStorage';
 import { readImportedShareCode, readOwnShareCode, sanitizeShareCode, saveImportedShareCode, saveOwnShareCode } from '../src/storage/shareStorage';
 import { readGoal, saveGoal } from '../src/storage/stepStorage';
+import { appendToastMessage } from '../src/utils/toastQueue';
 
 export default function ProfileScreen() {
   const { signOutUser, user } = useAuth();
@@ -180,19 +181,25 @@ export default function ProfileScreen() {
     }
 
     setIsSharing(true);
-    const nextCode = shareCode ?? createShareCode();
-    const result = await publishSharedProfile({
-      code: nextCode,
-      displayName,
-      userId: user.uid,
-    });
-    setIsSharing(false);
+    try {
+      const nextCode = shareCode ?? createShareCode();
+      const result = await publishSharedProfile({
+        code: nextCode,
+        displayName,
+        userId: user.uid,
+      });
 
-    if (result.ok) {
-      setShareCode(await saveOwnShareCode(result.code));
+      if (result.ok) {
+        setShareCode(await saveOwnShareCode(result.code));
+      }
+
+      showToast(result.ok ? `${result.message} Shared history is refreshed.` : result.message, result.ok ? 'standard' : 'error');
+    } catch (error) {
+      console.warn('Unable to publish shared profile.', error);
+      showToast('Could not publish shared history.', 'error');
+    } finally {
+      setIsSharing(false);
     }
-
-    showToast(result.ok ? `${result.message} Shared history is refreshed.` : result.message, result.ok ? 'standard' : 'error');
   };
 
   const handleImportShareCode = async (): Promise<void> => {
@@ -202,20 +209,26 @@ export default function ProfileScreen() {
       return;
     }
 
-    setIsImporting(true);
-    const sharedProfile = await readSharedProfile(normalizedCode);
-    setIsImporting(false);
-    if (sharedProfile === null) {
-      showToast('No shared profile found for this code.', 'error');
-      return;
-    }
+    try {
+      setIsImporting(true);
+      const sharedProfile = await readSharedProfile(normalizedCode);
+      if (sharedProfile === null) {
+        showToast('No shared profile found for this code.', 'error');
+        return;
+      }
 
-    setImportCode(await saveImportedShareCode(normalizedCode, sharedProfile.displayName));
-    showToast(`Imported ${sharedProfile.displayName}.`, 'standard');
+      setImportCode(await saveImportedShareCode(normalizedCode, sharedProfile.displayName));
+      showToast(`Imported ${sharedProfile.displayName}.`, 'standard');
+    } catch (error) {
+      console.warn('Unable to import shared profile.', error);
+      showToast('Could not import shared profile.', 'error');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const showToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
-    setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
+    setToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
   };
 
   const hideToast = (id: number): void => {

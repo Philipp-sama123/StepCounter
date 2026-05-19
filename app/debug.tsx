@@ -3,17 +3,21 @@ import { Accelerometer, DeviceMotion, Gyroscope, Magnetometer } from 'expo-senso
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '../src/auth/AuthContext';
+import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { RevealView } from '../src/components/RevealView';
-import { StepTrendChart } from '../src/components/StepTrendChart';
-import { COLORS } from '../src/constants';
+import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
+import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
 import { StepDataSource } from '../src/health/types';
-import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
+import { DetectorSample, useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { getTodayString, readStepsForDate } from '../src/storage/stepStorage';
+import { syncDailyStepSnapshot } from '../src/services/dailyStepSync';
+import { getTodayString, readGoal, readStepsForDate, StepHistoryEntry } from '../src/storage/stepStorage';
+import { appendToastMessage } from '../src/utils/toastQueue';
 
 type SensorSample = {
   headline: string;
@@ -29,9 +33,16 @@ type StepReferenceState = {
   syncedAt: string | null;
 };
 
+type DebugView = 'calculated' | 'sensors';
+
 export default function DebugScreen() {
   const { debugMessage, sensorLog, source, todaySteps } = useStepCounter('live');
+  const { user } = useAuth();
   const calculatedSteps = useCalculatedStepCounter();
+  const [debugView, setDebugView] = useState<DebugView>('calculated');
+  const [goal, setGoal] = useState(DEFAULT_GOAL);
+  const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
+  const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const [references, setReferences] = useState<StepReferenceState>({
     localSteps: 0,
     systemReason: 'Loading references...',
@@ -49,11 +60,13 @@ export default function DebugScreen() {
   const [magnetometerLog, setMagnetometerLog] = useState<SensorSample[]>([]);
 
   const loadReferences = useCallback(async (): Promise<void> => {
-    const [localSteps, systemResult] = await Promise.all([
+    const [localSteps, systemResult, savedGoal] = await Promise.all([
       readStepsForDate(getTodayString()),
       readTodayStepsFromSystemHealth(),
+      readGoal(),
     ]);
 
+    setGoal(savedGoal);
     setReferences({
       localSteps,
       systemReason: systemResult.available ? `Loaded from ${getSourceLabel(systemResult.source)}.` : systemResult.reason,
@@ -62,6 +75,46 @@ export default function DebugScreen() {
       syncedAt: new Date().toISOString(),
     });
   }, []);
+
+  const showServerToast = useCallback((message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
+    setServerToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
+  }, []);
+
+  const hideServerToast = (id: number): void => {
+    setServerToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
+  };
+
+  const handleSaveToFirestore = async (): Promise<void> => {
+    setIsSavingToFirestore(true);
+    try {
+      const [localSteps, systemResult, savedGoal] = await Promise.all([
+        readStepsForDate(getTodayString()),
+        readTodayStepsFromSystemHealth(),
+        readGoal(),
+      ]);
+      const nextSteps = systemResult.available ? systemResult.steps : Math.max(localSteps, todaySteps);
+      const nextSource = systemResult.available ? systemResult.source : source;
+
+      setGoal(savedGoal);
+      setReferences({
+        localSteps,
+        systemReason: systemResult.available ? `Loaded from ${getSourceLabel(systemResult.source)}.` : systemResult.reason,
+        systemSource: systemResult.source,
+        systemSteps: systemResult.available ? systemResult.steps : null,
+        syncedAt: new Date().toISOString(),
+      });
+
+      const result = await syncDailyStepSnapshot({
+        goal: savedGoal,
+        source: nextSource,
+        steps: nextSteps,
+        userId: user?.uid ?? null,
+      });
+      showServerToast(result.message, result.ok ? 'standard' : 'error');
+    } finally {
+      setIsSavingToFirestore(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -165,68 +218,161 @@ export default function DebugScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.subtitle}>Debugging</Text>
-            <Text style={styles.title}>Sensor data</Text>
+            <Text style={styles.title}>{debugView === 'calculated' ? 'Calculated steps' : 'Sensor data'}</Text>
           </View>
           <Ionicons color={COLORS.challenge} name="bug-outline" size={28} />
         </View>
 
-        <RevealView style={styles.referencePanel}>
-          <Text style={styles.sectionTitle}>Step references</Text>
-          <Text style={styles.sectionText}>Compare the live pedometer value with local cache and system health data.</Text>
-          <View style={styles.referenceGrid}>
-            <ReferenceCard label="Live sensor" value={todaySteps.toLocaleString()} />
-            <ReferenceCard label="Local cache" value={references.localSteps.toLocaleString()} />
-            <ReferenceCard
-              label={getSourceLabel(references.systemSource)}
-              note={references.systemReason}
-              value={references.systemSteps === null ? 'No data' : references.systemSteps.toLocaleString()}
-            />
-          </View>
-          <Text style={styles.syncedText}>{`Checked ${formatSyncTime(references.syncedAt)} · app source ${getSourceLabel(source)}`}</Text>
-        </RevealView>
+        <View style={styles.segmentedControl}>
+          <AnimatedPressable
+            accessibilityLabel="Show calculated step debug"
+            accessibilityRole="button"
+            onPress={() => setDebugView('calculated')}
+            style={[styles.segmentButton, debugView === 'calculated' ? styles.segmentButtonActive : null]}
+          >
+            <Text style={[styles.segmentText, debugView === 'calculated' ? styles.segmentTextActive : null]}>Calculated</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            accessibilityLabel="Show raw sensor debug"
+            accessibilityRole="button"
+            onPress={() => setDebugView('sensors')}
+            style={[styles.segmentButton, debugView === 'sensors' ? styles.segmentButtonActive : null]}
+          >
+            <Text style={[styles.segmentText, debugView === 'sensors' ? styles.segmentTextActive : null]}>Sensors</Text>
+          </AnimatedPressable>
+        </View>
 
-        <RevealView delay={60}>
-          <PedometerConsole log={sensorLog} />
-        </RevealView>
-        <RevealView delay={110}>
+        {debugView === 'calculated' ? (
+        <RevealView>
           <View style={styles.consoleSection}>
-            <ConsoleHeader meta="saved locally" title="Calculated step history" />
-            <Text style={styles.sectionText}>Experimental acceleration and rotation-based steps, stored separately from Health Connect and live pedometer totals.</Text>
+            <ConsoleHeader meta="experimental" title="Calculated step detector" />
+            <Text style={styles.sectionText}>
+              This counter watches acceleration peaks. A peak is accepted as a step only after a short warmup, when the timing looks walk-like, and when rotation is not too chaotic. It is saved separately from Health Connect.
+            </Text>
             <View style={styles.calculatedSummaryGrid}>
               <ReferenceCard label="Calculated" value={calculatedSteps.steps.toLocaleString()} />
               <ReferenceCard label="Cadence" value={`${calculatedSteps.cadenceStepsPerMinute}/min`} />
               <ReferenceCard label="Confidence" value={`${calculatedSteps.confidence}%`} />
             </View>
-            <StepTrendChart
-              animationKey={calculatedSteps.steps}
-              goal={Math.max(1, references.systemSteps ?? todaySteps)}
-              history={calculatedSteps.history}
-            />
+            <View style={styles.detectorPanel}>
+              <View style={styles.detectorHeader}>
+                <Text style={styles.detectorTitle}>Current detector decision</Text>
+                <Text style={[
+                  styles.detectorPill,
+                  calculatedSteps.detectorDecision === 'accepted' ? styles.detectorPillAccepted : null,
+                ]}>
+                  {calculatedSteps.detectorDecision}
+                </Text>
+              </View>
+              <Text style={styles.detectorReason}>{calculatedSteps.detectorReason}</Text>
+              <View style={styles.pipeline}>
+                <PipelineStep
+                  active={calculatedSteps.sampleCount > 8}
+                  label="1. Warmup"
+                  value={`${Math.min(calculatedSteps.sampleCount, 8)}/8 samples`}
+                />
+                <PipelineStep
+                  active={calculatedSteps.lastMotionG > calculatedSteps.motionThresholdG}
+                  label="2. Motion peak"
+                  value={`${formatAxis(calculatedSteps.lastMotionG)}g / ${formatAxis(calculatedSteps.motionThresholdG)}g`}
+                />
+                <PipelineStep
+                  active={calculatedSteps.elapsedMsSinceStep === null || calculatedSteps.elapsedMsSinceStep > 2200 || (calculatedSteps.elapsedMsSinceStep >= 260 && calculatedSteps.elapsedMsSinceStep <= 1400)}
+                  label="3. Step timing"
+                  value={calculatedSteps.elapsedMsSinceStep === null ? 'first step' : calculatedSteps.elapsedMsSinceStep > 2200 ? 'new sequence' : `${calculatedSteps.elapsedMsSinceStep}ms`}
+                />
+                <PipelineStep
+                  active={calculatedSteps.lastRotationRadPerSecond < 7.5}
+                  label="4. Rotation gate"
+                  value={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
+                />
+              </View>
+              <View style={styles.liveGraphStack}>
+                <SignalGraph
+                  goodAbove
+                  label="Motion signal"
+                  limitLabel="threshold"
+                  limitValue={calculatedSteps.motionThresholdG}
+                  samples={calculatedSteps.samples.map((sample) => sample.motionG)}
+                  valueLabel={`${formatAxis(calculatedSteps.lastMotionG)}g`}
+                />
+                <SignalGraph
+                  label="Rotation gate"
+                  limitLabel="max 7.5"
+                  limitValue={7.5}
+                  samples={calculatedSteps.samples.map((sample) => sample.rotationRadPerSecond)}
+                  valueLabel={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
+                />
+                <TimingGraph samples={calculatedSteps.samples} />
+              </View>
+            </View>
+            <View style={styles.explainerGrid}>
+              <ExplainerCard label="Acceleration" value={`${formatAxis(calculatedSteps.lastAccelerationG)}g`} text="Raw phone movement magnitude. The detector subtracts a moving gravity baseline from this." />
+              <ExplainerCard label="Motion signal" value={`${formatAxis(calculatedSteps.lastMotionG)}g`} text="The cleaned signal used for peak detection. It must cross the adaptive threshold." />
+              <ExplainerCard label="Saved as" value="debug only" text="This is not the official daily total. It is for tuning and comparing sensor behavior." />
+            </View>
+            <CalculatedHistoryChart history={calculatedSteps.history} todaySteps={calculatedSteps.steps} />
             <View style={styles.logBox}>
               {calculatedSteps.log.length > 0 ? calculatedSteps.log.slice(0, 10).map((entry, index) => (
                 <View key={`${entry.timestamp}-${entry.steps}-${index}`} style={styles.logRow}>
                   <Text style={styles.logTime}>{formatLogTime(entry.timestamp)}</Text>
-                  <Text style={styles.logLine}>{`calc ${entry.steps.toLocaleString()}  acc ${formatAxis(entry.accelerationG)}g  rot ${formatAxis(entry.rotationRadPerSecond)} rad/s`}</Text>
+                  <Text style={styles.logLine}>{`accepted #${entry.steps.toLocaleString()}  motion ${formatAxis(entry.motionG)}>${formatAxis(entry.thresholdG)}g  rot ${formatAxis(entry.rotationRadPerSecond)}  conf ${entry.confidence}%`}</Text>
                 </View>
               )) : <Text style={styles.logEmpty}>waiting for calculated step events...</Text>}
             </View>
           </View>
         </RevealView>
-        <RevealView delay={160}>
-          <SensorConsole available={accelerometerAvailable} description="Acceleration on x/y/z in g. 1g is roughly Earth gravity." log={accelerometerLog} title="Accelerometer" />
-        </RevealView>
-        <RevealView delay={210}>
-          <SensorConsole available={gyroscopeAvailable} description="Rotation speed around x/y/z in radians per second." log={gyroscopeLog} title="Gyroscope" />
-        </RevealView>
-        <RevealView delay={260}>
-          <SensorConsole available={deviceMotionAvailable} description="Combined acceleration/orientation stream when available." log={deviceMotionLog} title="Device motion" />
-        </RevealView>
-        <RevealView delay={310}>
-          <SensorConsole available={magnetometerAvailable} description="Magnetic field strength in microtesla, useful for orientation context." log={magnetometerLog} title="Magnetometer" />
-        </RevealView>
+        ) : (
+          <>
+            <RevealView style={styles.referencePanel}>
+              <Text style={styles.sectionTitle}>Step references</Text>
+              <Text style={styles.sectionText}>Compare the live pedometer value with local cache and system health data.</Text>
+              <View style={styles.referenceGrid}>
+                <ReferenceCard label="Live sensor" value={todaySteps.toLocaleString()} />
+                <ReferenceCard label="Local cache" value={references.localSteps.toLocaleString()} />
+                <ReferenceCard
+                  label={getSourceLabel(references.systemSource)}
+                  note={references.systemReason}
+                  value={references.systemSteps === null ? 'No data' : references.systemSteps.toLocaleString()}
+                />
+              </View>
+              <AnimatedPressable
+                accessibilityLabel="Save debug step reference to Firestore"
+                accessibilityRole="button"
+                disabled={isSavingToFirestore}
+                onPress={() => {
+                  void handleSaveToFirestore();
+                }}
+                style={({ pressed }) => [styles.saveButton, isSavingToFirestore ? styles.saveButtonBusy : null, pressed ? styles.pressed : null]}
+              >
+                {isSavingToFirestore ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="server-outline" size={18} />}
+                <Text style={styles.saveButtonText}>{isSavingToFirestore ? 'Saving' : 'Save reference to Firestore'}</Text>
+              </AnimatedPressable>
+              <Text style={styles.syncedText}>{`Checked ${formatSyncTime(references.syncedAt)} · app source ${getSourceLabel(source)}`}</Text>
+              <Text style={styles.syncedText}>{`Daily goal ${goal.toLocaleString()} · saved source uses system health when available`}</Text>
+            </RevealView>
 
-        <Text style={styles.debugText}>{debugMessage}</Text>
+            <RevealView delay={60}>
+              <PedometerConsole log={sensorLog} />
+            </RevealView>
+            <RevealView delay={110}>
+              <SensorConsole available={accelerometerAvailable} description="Acceleration on x/y/z in g. 1g is roughly Earth gravity." log={accelerometerLog} title="Accelerometer" />
+            </RevealView>
+            <RevealView delay={160}>
+              <SensorConsole available={gyroscopeAvailable} description="Rotation speed around x/y/z in radians per second." log={gyroscopeLog} title="Gyroscope" />
+            </RevealView>
+            <RevealView delay={210}>
+              <SensorConsole available={deviceMotionAvailable} description="Combined acceleration/orientation stream when available." log={deviceMotionLog} title="Device motion" />
+            </RevealView>
+            <RevealView delay={260}>
+              <SensorConsole available={magnetometerAvailable} description="Magnetic field strength in microtesla, useful for orientation context." log={magnetometerLog} title="Magnetometer" />
+            </RevealView>
+
+            <Text style={styles.debugText}>{debugMessage}</Text>
+          </>
+        )}
       </ScrollView>
+      <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
     </SafeAreaView>
   );
 }
@@ -244,6 +390,141 @@ const ReferenceCard = ({ label, note, value }: ReferenceCardProps) => (
     {note === undefined ? null : <Text style={styles.referenceNote} numberOfLines={2}>{note}</Text>}
   </View>
 );
+
+const ExplainerCard = ({ label, text, value }: { label: string; text: string; value: string }) => (
+  <View style={styles.explainerCard}>
+    <Text style={styles.explainerLabel}>{label}</Text>
+    <Text style={styles.explainerValue}>{value}</Text>
+    <Text style={styles.explainerText}>{text}</Text>
+  </View>
+);
+
+const PipelineStep = ({ active, label, value }: { active: boolean; label: string; value: string }) => (
+  <View style={[styles.pipelineStep, active ? styles.pipelineStepActive : null]}>
+    <View style={[styles.pipelineDot, active ? styles.pipelineDotActive : null]} />
+    <View style={styles.pipelineCopy}>
+      <Text style={styles.pipelineLabel}>{label}</Text>
+      <Text style={styles.pipelineValue}>{value}</Text>
+    </View>
+  </View>
+);
+
+const SignalGraph = ({
+  goodAbove = false,
+  label,
+  limitLabel,
+  limitValue,
+  samples,
+  valueLabel,
+}: {
+  goodAbove?: boolean;
+  label: string;
+  limitLabel: string;
+  limitValue: number;
+  samples: number[];
+  valueLabel: string;
+}) => {
+  const maxValue = Math.max(limitValue * 1.4, ...samples, 1);
+  const limitPercent = Math.max(0, Math.min(100, (limitValue / maxValue) * 100));
+
+  return (
+    <View style={styles.signalGraph}>
+      <View style={styles.signalHeader}>
+        <Text style={styles.signalTitle}>{label}</Text>
+        <Text style={styles.signalValue}>{valueLabel}</Text>
+      </View>
+      <View style={styles.signalBars}>
+        <View style={[styles.signalLimit, { bottom: `${limitPercent}%` }]} />
+        {samples.slice(-32).map((sample, index) => {
+          const height = Math.max(4, Math.min(100, (sample / maxValue) * 100));
+          const passes = goodAbove ? sample >= limitValue : sample <= limitValue;
+
+          return (
+            <View
+              key={`${index}-${sample}`}
+              style={[
+                styles.signalBar,
+                passes ? styles.signalBarPass : styles.signalBarFail,
+                { height: `${height}%` },
+              ]}
+            />
+          );
+        })}
+      </View>
+      <Text style={styles.signalLimitLabel}>{limitLabel}</Text>
+    </View>
+  );
+};
+
+const TimingGraph = ({ samples }: { samples: DetectorSample[] }) => {
+  const maxTimingMs = 2400;
+
+  return (
+    <View style={styles.signalGraph}>
+      <View style={styles.signalHeader}>
+        <Text style={styles.signalTitle}>Step timing</Text>
+        <Text style={styles.signalValue}>260-1400ms · reset 2200ms</Text>
+      </View>
+      <View style={styles.signalBars}>
+        <View style={[styles.signalLimit, styles.signalTimingMin, { bottom: `${(260 / maxTimingMs) * 100}%` }]} />
+        <View style={[styles.signalLimit, { bottom: `${(1400 / maxTimingMs) * 100}%` }]} />
+        {samples.slice(-32).map((sample, index) => {
+          const elapsedMs = sample.elapsedMsSinceStep ?? 0;
+          const height = Math.max(4, Math.min(100, (elapsedMs / maxTimingMs) * 100));
+          const passes = sample.elapsedMsSinceStep === null || elapsedMs > 2200 || (elapsedMs >= 260 && elapsedMs <= 1400);
+
+          return (
+            <View
+              key={`${index}-${sample.timestamp}`}
+              style={[
+                styles.signalBar,
+                passes ? styles.signalBarPass : styles.signalBarFail,
+                { height: `${height}%` },
+              ]}
+            />
+          );
+        })}
+      </View>
+      <Text style={styles.signalLimitLabel}>walking window</Text>
+    </View>
+  );
+};
+
+const CalculatedHistoryChart = ({ history, todaySteps }: { history: StepHistoryEntry[]; todaySteps: number }) => {
+  const entries = history.length > 0 ? history : [{ date: getTodayString(), dayName: 'Today', steps: todaySteps }];
+  const maxSteps = Math.max(...entries.map((entry) => entry.steps), todaySteps, 1);
+
+  return (
+    <View style={styles.calculatedChart}>
+      <View style={styles.calculatedChartHeader}>
+        <Text style={styles.calculatedChartTitle}>Accepted peaks by day</Text>
+        <Text style={styles.calculatedChartMeta}>{`${maxSteps.toLocaleString()} max`}</Text>
+      </View>
+      <View style={styles.calculatedBars}>
+        {entries.map((entry) => {
+          const isToday = entry.date === getTodayString();
+          const barHeight = Math.max(8, Math.round((entry.steps / maxSteps) * 96));
+
+          return (
+            <View key={entry.date} style={styles.calculatedBarItem}>
+              <View style={styles.calculatedBarTrack}>
+                <View
+                  style={[
+                    styles.calculatedBarFill,
+                    isToday ? styles.calculatedBarFillToday : null,
+                    { height: barHeight },
+                  ]}
+                />
+              </View>
+              <Text style={styles.calculatedBarValue}>{entry.steps.toLocaleString()}</Text>
+              <Text style={styles.calculatedBarLabel}>{isToday ? 'Today' : entry.dayName}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+};
 
 type PedometerLog = {
   delta: number;
@@ -388,6 +669,38 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '900',
   },
+  segmentedControl: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.challenge,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    padding: 5,
+  },
+  segmentButton: {
+    alignItems: 'center',
+    borderRadius: 6,
+    flex: 1,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  segmentButtonActive: {
+    backgroundColor: COLORS.challenge,
+  },
+  segmentText: {
+    color: COLORS.challenge,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  segmentTextActive: {
+    color: COLORS.surface,
+  },
+  pressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
+  },
   referencePanel: {
     backgroundColor: COLORS.challengeSoft,
     borderColor: COLORS.challenge,
@@ -432,6 +745,24 @@ const styles = StyleSheet.create({
     color: COLORS.challenge,
     fontSize: 11,
     fontWeight: '800',
+  },
+  saveButton: {
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: 14,
+  },
+  saveButtonBusy: {
+    opacity: 0.82,
+  },
+  saveButtonText: {
+    color: COLORS.surface,
+    fontSize: 13,
+    fontWeight: '900',
   },
   consoleSection: {
     backgroundColor: COLORS.surface,
@@ -490,6 +821,250 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  detectorPanel: {
+    backgroundColor: COLORS.challengeSoft,
+    borderColor: COLORS.challenge,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    padding: 12,
+  },
+  detectorHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  detectorTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  detectorPill: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '900',
+    overflow: 'hidden',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    textTransform: 'uppercase',
+  },
+  detectorPillAccepted: {
+    borderColor: COLORS.success,
+    color: COLORS.success,
+  },
+  detectorReason: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
+  },
+  pipeline: {
+    gap: 8,
+  },
+  pipelineStep: {
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    padding: 9,
+  },
+  pipelineStepActive: {
+    borderColor: COLORS.success,
+  },
+  pipelineDot: {
+    backgroundColor: COLORS.border,
+    borderRadius: 6,
+    height: 12,
+    width: 12,
+  },
+  pipelineDotActive: {
+    backgroundColor: COLORS.success,
+  },
+  pipelineCopy: {
+    flex: 1,
+  },
+  pipelineLabel: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  pipelineValue: {
+    color: COLORS.mutedText,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  liveGraphStack: {
+    gap: 9,
+  },
+  signalGraph: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 7,
+    padding: 10,
+  },
+  signalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  signalTitle: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  signalValue: {
+    color: COLORS.challenge,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  signalBars: {
+    alignItems: 'flex-end',
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 7,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    height: 76,
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingTop: 6,
+    position: 'relative',
+  },
+  signalLimit: {
+    backgroundColor: COLORS.challenge,
+    height: 2,
+    left: 0,
+    opacity: 0.65,
+    position: 'absolute',
+    right: 0,
+  },
+  signalTimingMin: {
+    backgroundColor: COLORS.primary,
+  },
+  signalBar: {
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    flex: 1,
+    minWidth: 3,
+  },
+  signalBarPass: {
+    backgroundColor: COLORS.success,
+  },
+  signalBarFail: {
+    backgroundColor: COLORS.stopped,
+  },
+  signalLimitLabel: {
+    color: COLORS.mutedText,
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  explainerGrid: {
+    gap: 8,
+  },
+  explainerCard: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 3,
+    padding: 10,
+  },
+  explainerLabel: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  explainerValue: {
+    color: COLORS.challenge,
+    fontFamily: 'monospace',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+  explainerText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  calculatedChart: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  calculatedChartHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  calculatedChartTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  calculatedChartMeta: {
+    color: COLORS.challenge,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  calculatedBars: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 148,
+  },
+  calculatedBarItem: {
+    alignItems: 'center',
+    flex: 1,
+    gap: 5,
+  },
+  calculatedBarTrack: {
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 7,
+    borderWidth: 1,
+    height: 104,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+    width: '100%',
+  },
+  calculatedBarFill: {
+    backgroundColor: COLORS.primary,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    width: '100%',
+  },
+  calculatedBarFillToday: {
+    backgroundColor: COLORS.challenge,
+  },
+  calculatedBarValue: {
+    color: COLORS.text,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  calculatedBarLabel: {
+    color: COLORS.mutedText,
+    fontSize: 10,
+    fontWeight: '800',
   },
   logBox: {
     backgroundColor: '#08110D',

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Accelerometer, DeviceMotion, Gyroscope, Magnetometer } from 'expo-sensors';
+import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,9 +13,9 @@ import { GoalModal } from '../src/components/GoalModal';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
-import { COLORS, DEFAULT_GOAL } from '../src/constants';
+import { COLORS, DEFAULT_GOAL, THEME } from '../src/constants';
 import { syncChallengeSession } from '../src/firebase/stepsSync';
-import { StepDataSource } from '../src/health/types';
+import { publishOwnSharedProfileSnapshot } from '../src/services/sharedProfilePublish';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import {
     getTodayString,
@@ -27,6 +27,8 @@ import {
     saveChallengeSession,
     saveDailyChallengeGoal,
 } from '../src/storage/stepStorage';
+import { getStepSourceLabel } from '../src/utils/stepSource';
+import { appendToastMessage } from '../src/utils/toastQueue';
 
 type AccelerometerSample = {
     magnitude: number;
@@ -76,10 +78,6 @@ export default function ChallengeScreen() {
     const [accelerometerLog, setAccelerometerLog] = useState<AccelerometerSample[]>([]);
     const [gyroscopeAvailable, setGyroscopeAvailable] = useState<boolean | null>(null);
     const [gyroscopeLog, setGyroscopeLog] = useState<GenericSensorSample[]>([]);
-    const [deviceMotionAvailable, setDeviceMotionAvailable] = useState<boolean | null>(null);
-    const [deviceMotionLog, setDeviceMotionLog] = useState<GenericSensorSample[]>([]);
-    const [magnetometerAvailable, setMagnetometerAvailable] = useState<boolean | null>(null);
-    const [magnetometerLog, setMagnetometerLog] = useState<GenericSensorSample[]>([]);
     const sessionOpacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
@@ -119,15 +117,15 @@ export default function ChallengeScreen() {
     };
 
     const showToast = (message: string): void => {
-        setToastMessages((currentMessages) => appendToast(currentMessages, { message }));
+        setToastMessages((currentMessages) => appendToastMessage(currentMessages, { message }));
     };
 
     const showSessionToast = (message: string): void => {
-        setSessionToastMessages((currentMessages) => appendToast(currentMessages, { message, variant: 'standard' }));
+        setSessionToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant: 'standard' }));
     };
 
     const showServerToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
-        setServerToastMessages((currentMessages) => appendToast(currentMessages, { message, variant }));
+        setServerToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
     };
 
     const hideToast = (id: number): void => {
@@ -185,6 +183,12 @@ export default function ChallengeScreen() {
     }, [isChallengeActive]);
 
     useEffect(() => {
+        if (!isChallengeActive) {
+            setAccelerometerAvailable(null);
+            setAccelerometerLog([]);
+            return undefined;
+        }
+
         let isMounted = true;
         let subscription: ReturnType<typeof Accelerometer.addListener> | null = null;
 
@@ -225,29 +229,27 @@ export default function ChallengeScreen() {
             isMounted = false;
             subscription?.remove();
         };
-    }, []);
+    }, [isChallengeActive]);
 
     useEffect(() => {
+        if (!isChallengeActive) {
+            setGyroscopeAvailable(null);
+            setGyroscopeLog([]);
+            return undefined;
+        }
+
         let isMounted = true;
         let gyroscopeSubscription: ReturnType<typeof Gyroscope.addListener> | null = null;
-        let deviceMotionSubscription: ReturnType<typeof DeviceMotion.addListener> | null = null;
-        let magnetometerSubscription: ReturnType<typeof Magnetometer.addListener> | null = null;
 
         const startMotionSensors = async (): Promise<void> => {
             try {
-                const [hasGyroscope, hasDeviceMotion, hasMagnetometer] = await Promise.all([
-                    Gyroscope.isAvailableAsync(),
-                    DeviceMotion.isAvailableAsync(),
-                    Magnetometer.isAvailableAsync(),
-                ]);
+                const hasGyroscope = await Gyroscope.isAvailableAsync();
 
                 if (!isMounted) {
                     return;
                 }
 
                 setGyroscopeAvailable(hasGyroscope);
-                setDeviceMotionAvailable(hasDeviceMotion);
-                setMagnetometerAvailable(hasMagnetometer);
 
                 if (hasGyroscope) {
                     Gyroscope.setUpdateInterval(650);
@@ -263,53 +265,10 @@ export default function ChallengeScreen() {
                         ].slice(0, 120));
                     });
                 }
-
-                if (hasDeviceMotion) {
-                    DeviceMotion.setUpdateInterval(650);
-                    deviceMotionSubscription = DeviceMotion.addListener((measurement) => {
-                        const acceleration = getMotionVector(measurement.acceleration)
-                            ?? getMotionVector(measurement.accelerationIncludingGravity);
-                        if (acceleration === null) {
-                            return;
-                        }
-
-                        const rotationRate = getRotationRate(measurement.rotationRate);
-                        const accelerationMagnitude = getVectorMagnitude(acceleration.x, acceleration.y, acceleration.z);
-                        const rotationText = rotationRate === null
-                            ? 'rot unavailable'
-                            : `rot ${formatAxis(rotationRate.alpha)}/${formatAxis(rotationRate.beta)}/${formatAxis(rotationRate.gamma)} deg/s`;
-
-                        setDeviceMotionLog((currentLog) => [
-                            {
-                                headline: `${formatAxis(accelerationMagnitude)} m/s2`,
-                                line: `acc ${formatAxis(acceleration.x)}/${formatAxis(acceleration.y)}/${formatAxis(acceleration.z)}  ${rotationText}`,
-                                timestamp: new Date().toISOString(),
-                            },
-                            ...currentLog,
-                        ].slice(0, 120));
-                    });
-                }
-
-                if (hasMagnetometer) {
-                    Magnetometer.setUpdateInterval(650);
-                    magnetometerSubscription = Magnetometer.addListener(({ x, y, z }) => {
-                        const magnitude = getVectorMagnitude(x, y, z);
-                        setMagnetometerLog((currentLog) => [
-                            {
-                                headline: `${formatAxis(magnitude)} uT`,
-                                line: `x ${formatAxis(x)}  y ${formatAxis(y)}  z ${formatAxis(z)}`,
-                                timestamp: new Date().toISOString(),
-                            },
-                            ...currentLog,
-                        ].slice(0, 120));
-                    });
-                }
             } catch (error) {
                 console.warn('Unable to read motion sensor data.', error);
                 if (isMounted) {
                     setGyroscopeAvailable(false);
-                    setDeviceMotionAvailable(false);
-                    setMagnetometerAvailable(false);
                 }
             }
         };
@@ -319,10 +278,8 @@ export default function ChallengeScreen() {
         return () => {
             isMounted = false;
             gyroscopeSubscription?.remove();
-            deviceMotionSubscription?.remove();
-            magnetometerSubscription?.remove();
         };
-    }, []);
+    }, [isChallengeActive]);
 
     useFocusEffect(
         useCallback(() => {
@@ -351,9 +308,7 @@ export default function ChallengeScreen() {
     const dailyChallengeGoalPercent = dailyChallengeGoal > 0 ? Math.min(100, (idleChallengeSteps / dailyChallengeGoal) * 100) : 0;
     const rollingAverages = getRollingAverages({
         accelerometerLog,
-        deviceMotionLog,
         gyroscopeLog,
-        magnetometerLog,
         nowMs: sessionClock,
         sensorLog,
     });
@@ -535,6 +490,11 @@ export default function ChallengeScreen() {
                                             });
                                             if (!result.ok) {
                                                 showServerToast(result.message, 'error');
+                                            } else {
+                                                await publishOwnSharedProfileSnapshot({
+                                                    displayName,
+                                                    userId: user.uid,
+                                                });
                                             }
                                         }
                                         showSessionToast(`+${delta.toLocaleString()} session steps added`);
@@ -584,7 +544,7 @@ export default function ChallengeScreen() {
                     <View style={styles.sensorSummary}>
                         <View style={styles.sensorSummaryItem}>
                             <Text style={styles.sensorSummaryLabel}>Source</Text>
-                            <Text style={styles.sensorSummaryValue}>{getSourceLabel(source)}</Text>
+                            <Text style={styles.sensorSummaryValue}>{getStepSourceLabel(source)}</Text>
                         </View>
                         <View style={styles.sensorSummaryItem}>
                             <Text style={styles.sensorSummaryLabel}>Session</Text>
@@ -649,39 +609,6 @@ export default function ChallengeScreen() {
     );
 }
 
-const getSourceLabel = (source: StepDataSource): string => {
-    if (source === 'apple-health') {
-        return 'Apple Health';
-    }
-
-    if (source === 'health-connect') {
-        return 'Health Connect';
-    }
-
-    if (source === 'live-sensor') {
-        return 'Live sensor';
-    }
-
-    return 'Local';
-};
-
-const formatLogTime = (timestamp: string): string => new Date(timestamp).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-});
-
-const formatReferenceSync = (timestamp: string | null): string => {
-    if (timestamp === null) {
-        return 'not loaded';
-    }
-
-    return new Date(timestamp).toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-};
-
 const formatDuration = (durationMs: number): string => {
     const totalSeconds = Math.floor(durationMs / 1000);
     const minutes = Math.floor(totalSeconds / 60);
@@ -692,108 +619,30 @@ const formatDuration = (durationMs: number): string => {
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
 
-const appendToast = (
-    currentMessages: ToastMessageItem[],
-    nextMessage: Omit<ToastMessageItem, 'id'>,
-): ToastMessageItem[] => {
-    const hasDuplicateVisible = currentMessages.some((message) =>
-        message.message === nextMessage.message && (message.variant ?? 'success') === (nextMessage.variant ?? 'success'),
-    );
-
-    if (hasDuplicateVisible) {
-        return currentMessages;
-    }
-
-    return [
-        ...currentMessages.slice(-2),
-        {
-            ...nextMessage,
-            id: Date.now() + Math.floor(Math.random() * 1000),
-        },
-    ];
-};
-
 const getAccelerationMagnitude = (x: number, y: number, z: number): number =>
     Math.sqrt(x * x + y * y + z * z);
-
-type MotionVector = {
-    x: number;
-    y: number;
-    z: number;
-};
-
-type RotationRate = {
-    alpha: number;
-    beta: number;
-    gamma: number;
-};
-
-const isFiniteNumber = (value: unknown): value is number =>
-    typeof value === 'number' && Number.isFinite(value);
-
-const getMotionVector = (value: unknown): MotionVector | null => {
-    if (typeof value !== 'object' || value === null) {
-        return null;
-    }
-
-    const vector = value as Partial<MotionVector>;
-    if (!isFiniteNumber(vector.x) || !isFiniteNumber(vector.y) || !isFiniteNumber(vector.z)) {
-        return null;
-    }
-
-    return {
-        x: vector.x,
-        y: vector.y,
-        z: vector.z,
-    };
-};
-
-const getRotationRate = (value: unknown): RotationRate | null => {
-    if (typeof value !== 'object' || value === null) {
-        return null;
-    }
-
-    const rotation = value as Partial<RotationRate>;
-    if (!isFiniteNumber(rotation.alpha) || !isFiniteNumber(rotation.beta) || !isFiniteNumber(rotation.gamma)) {
-        return null;
-    }
-
-    return {
-        alpha: rotation.alpha,
-        beta: rotation.beta,
-        gamma: rotation.gamma,
-    };
-};
 
 const getVectorMagnitude = (x: number, y: number, z: number): number =>
     Math.sqrt(x * x + y * y + z * z);
 
 const formatAxis = (value: number): string => value.toFixed(2);
 
-const formatAcceleration = (value: number): string => `${value.toFixed(2)}g`;
-
 type RollingAverageInput = {
     accelerometerLog: AccelerometerSample[];
-    deviceMotionLog: GenericSensorSample[];
     gyroscopeLog: GenericSensorSample[];
-    magnetometerLog: GenericSensorSample[];
     nowMs: number;
     sensorLog: Array<{ delta: number; timestamp: string }>;
 };
 
 type RollingAverages = {
     accelerometerMagnitude: number;
-    deviceMotionMagnitude: number;
     gyroscopeMagnitude: number;
-    magnetometerMagnitude: number;
     stepsPerMinute: number;
 };
 
 const getRollingAverages = ({
     accelerometerLog,
-    deviceMotionLog,
     gyroscopeLog,
-    magnetometerLog,
     nowMs,
     sensorLog,
 }: RollingAverageInput): RollingAverages => {
@@ -805,13 +654,7 @@ const getRollingAverages = ({
         accelerometerMagnitude: averageNumbers(accelerometerLog
             .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
             .map((entry) => entry.magnitude)),
-        deviceMotionMagnitude: averageNumbers(deviceMotionLog
-            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
-            .map((entry) => parseLeadingNumber(entry.headline))),
         gyroscopeMagnitude: averageNumbers(gyroscopeLog
-            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
-            .map((entry) => parseLeadingNumber(entry.headline))),
-        magnetometerMagnitude: averageNumbers(magnetometerLog
             .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
             .map((entry) => parseLeadingNumber(entry.headline))),
         stepsPerMinute,
@@ -899,87 +742,10 @@ const AnimatedMetricNumber = ({ style, value }: AnimatedMetricNumberProps) => {
     );
 };
 
-type SensorConsoleProps = {
-    available: boolean | null;
-    description: string;
-    log: GenericSensorSample[];
-    metrics: SensorExplanationItem[];
-    title: string;
-    unitLabel: string;
-};
-
-type SensorExplanationItem = {
-    label: string;
-    text: string;
-};
-
-type SensorExplanationProps = {
-    description: string;
-    items: SensorExplanationItem[];
-};
-
-const SensorExplanation = ({ description, items }: SensorExplanationProps) => (
-    <View style={styles.sensorExplanation}>
-        <Text style={styles.sensorDescription}>{description}</Text>
-        {items.map((item) => (
-            <View key={item.label} style={styles.sensorExplanationRow}>
-                <Text style={styles.sensorExplanationLabel}>{item.label}</Text>
-                <Text style={styles.sensorExplanationText}>{item.text}</Text>
-            </View>
-        ))}
-    </View>
-);
-
-type ReferenceCardProps = {
-    label: string;
-    note?: string;
-    value: string;
-};
-
-const ReferenceCard = ({ label, note, value }: ReferenceCardProps) => (
-    <View style={styles.referenceCard}>
-        <Text style={styles.referenceLabel}>{label}</Text>
-        <Text style={styles.referenceValue}>{value}</Text>
-        {note === undefined ? null : <Text style={styles.referenceNote} numberOfLines={2}>{note}</Text>}
-    </View>
-);
-
-const SensorConsole = ({ available, description, log, metrics, title, unitLabel }: SensorConsoleProps) => (
-    <View style={styles.sensorConsole}>
-        <View style={styles.consoleHeader}>
-            <Text style={styles.consoleTitle}>{title}</Text>
-            <Text style={styles.consoleMeta}>{available === false ? 'unavailable' : 'last 10'}</Text>
-        </View>
-        <SensorExplanation description={description} items={metrics} />
-        {log.length > 0 ? (
-            <>
-                <View style={styles.sensorCurrent}>
-                    <Text style={styles.sensorCurrentValue}>{log[0].headline}</Text>
-                    <Text style={styles.sensorCurrentLabel}>{unitLabel}</Text>
-                </View>
-                <View style={styles.consoleLogBox}>
-                    {log.slice(0, 10).map((entry, index) => (
-                        <View key={`${entry.timestamp}-${index}`} style={styles.consoleRow}>
-                            <Text style={styles.consoleTime}>{formatLogTime(entry.timestamp)}</Text>
-                            <Text style={styles.consoleLine}>{entry.line}</Text>
-                        </View>
-                    ))}
-                </View>
-            </>
-        ) : (
-            <View style={styles.consoleLogBox}>
-                <Text style={styles.consoleEmpty}>
-                    {available === false ? `${title.toLowerCase()} unavailable on this device` : `waiting for ${title.toLowerCase()} events...`}
-                </Text>
-            </View>
-        )}
-    </View>
-);
-
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: THEME.color.appBackground,
     },
     container: {
         paddingHorizontal: 20,

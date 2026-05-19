@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, AppStateStatus, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
@@ -12,16 +12,13 @@ import { ProgressRing } from '../src/components/ProgressRing';
 import { RevealView } from '../src/components/RevealView';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
-import { COLORS, DEFAULT_GOAL } from '../src/constants';
-import {
-  getDailyChallengeStats,
-  readDailyStepsFromFirestore,
-  syncDailySteps,
-} from '../src/firebase/stepsSync';
-import { StepDataSource } from '../src/health/types';
-import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
+import { COLORS, DEFAULT_GOAL, THEME } from '../src/constants';
+import { useDailyStepSync } from '../src/hooks/useDailyStepSync';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { getTodayString, readChallengeSessions, readGoal } from '../src/storage/stepStorage';
+import { readGoal } from '../src/storage/stepStorage';
+import { getStepSourceLabel } from '../src/utils/stepSource';
+import { formatNullableTime } from '../src/utils/timeFormat';
+import { appendToastMessage } from '../src/utils/toastQueue';
 
 export default function HomeScreen() {
   const {
@@ -35,100 +32,22 @@ export default function HomeScreen() {
     status,
     todaySteps,
   } = useStepCounter('combined');
-  const calculatedSteps = useCalculatedStepCounter();
   const { user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [progressResetKey, setProgressResetKey] = useState(0);
   const [stepReplayKey, setStepReplayKey] = useState(0);
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
-  const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
-  const hasSyncedOnOpenRef = useRef(false);
-  const latestSyncSnapshotRef = useRef<DailySyncSnapshot>({
+  const showServerToast = useCallback((message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
+    setServerToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
+  }, []);
+  const { isSyncing: isSavingToFirestore, syncNow: saveDailyStepsToFirestore } = useDailyStepSync({
     goal,
+    onMessage: showServerToast,
     source,
     steps: todaySteps,
     userId: user?.uid ?? null,
   });
-
-  useEffect(() => {
-    latestSyncSnapshotRef.current = {
-      goal,
-      source,
-      steps: todaySteps,
-      userId: user?.uid ?? null,
-    };
-  }, [goal, source, todaySteps, user]);
-
-  const syncDailySnapshotToFirestore = useCallback(async (
-    snapshot: DailySyncSnapshot,
-    options: { notify: boolean; showNoChanges?: boolean } = { notify: false },
-  ): Promise<void> => {
-    if (snapshot.userId === null || snapshot.steps === 0) {
-      if (options.notify) {
-        showServerToast(snapshot.userId === null ? 'Sign in before saving to Firestore.' : 'No steps to save yet.', 'error');
-      }
-      return;
-    }
-
-    const today = getTodayString();
-    const sessions = await readChallengeSessions(today);
-    const challengeStats = getDailyChallengeStats(sessions);
-    const existingDailySteps = await readDailyStepsFromFirestore(snapshot.userId, [today]);
-    const existing = existingDailySteps[today];
-
-    if (existing !== undefined && hasNoDailyStepChanges(existing, {
-      ...challengeStats,
-      goal: snapshot.goal,
-      source: snapshot.source,
-      steps: snapshot.steps,
-    })) {
-      if (options.notify && options.showNoChanges) {
-        showServerToast('No changes to save.', 'standard');
-      }
-      return;
-    }
-
-    const result = await syncDailySteps({
-      ...challengeStats,
-      date: today,
-      goal: snapshot.goal,
-      source: snapshot.source,
-      steps: snapshot.steps,
-      userId: snapshot.userId,
-    });
-
-    if (options.notify) {
-      showServerToast(result.message, result.ok ? 'standard' : 'error');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (hasSyncedOnOpenRef.current || user === null || todaySteps === 0) {
-      return;
-    }
-
-    hasSyncedOnOpenRef.current = true;
-    void syncDailySnapshotToFirestore(latestSyncSnapshotRef.current);
-  }, [syncDailySnapshotToFirestore, todaySteps, user]);
-
-  useEffect(() => {
-    let appState = AppState.currentState;
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      const wasBackgrounded = appState === 'background' || appState === 'inactive';
-      const willBackground = nextAppState === 'background' || nextAppState === 'inactive';
-
-      if ((wasBackgrounded && nextAppState === 'active') || willBackground) {
-        void syncDailySnapshotToFirestore(latestSyncSnapshotRef.current);
-      }
-
-      appState = nextAppState;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [syncDailySnapshotToFirestore]);
 
   const handleRefreshSteps = async (): Promise<void> => {
     const message = await refreshSteps();
@@ -138,17 +57,11 @@ export default function HomeScreen() {
   };
 
   const handleSaveToFirestore = async (): Promise<void> => {
-    setIsSavingToFirestore(true);
-    await syncDailySnapshotToFirestore(latestSyncSnapshotRef.current, { notify: true, showNoChanges: true });
-    setIsSavingToFirestore(false);
+    await saveDailyStepsToFirestore();
   };
 
   const showToast = (message: string, variant: ToastMessageItem['variant'] = 'success'): void => {
-    setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
-  };
-
-  const showServerToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
-    setServerToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message, variant }]);
+    setToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
   };
 
   const hideToast = (id: number): void => {
@@ -236,8 +149,8 @@ export default function HomeScreen() {
         <RevealView delay={80} replayKey={stepReplayKey} style={styles.statsGrid}>
           <StatCard label="Progress" value={`${progressPercent.toFixed(2)}%`} />
           <StatCard label="Remaining" value={remainingSteps === 0 ? 'Done' : remainingSteps.toLocaleString()} />
-          <StatCard label="Source" value={getSourceLabel(source)} />
-          <StatCard label="Synced" value={formatSyncTime(lastSyncedAt)} />
+          <StatCard label="Source" value={getStepSourceLabel(source)} />
+          <StatCard label="Synced" value={formatNullableTime(lastSyncedAt)} />
         </RevealView>
 
         <RevealView delay={140} replayKey={stepReplayKey} style={styles.syncPanel}>
@@ -258,8 +171,8 @@ export default function HomeScreen() {
           <View style={styles.sourceGrid}>
             <StatCard label="Combined" value={todaySteps.toLocaleString()} />
             <StatCard label="Health total" value={isSystemTotalAvailable ? todaySteps.toLocaleString() : 'No data'} />
-            <StatCard label="Health source" value={getSourceLabel(source)} />
-            <StatCard label="Health synced" value={formatSyncTime(lastSyncedAt)} />
+            <StatCard label="Health source" value={getStepSourceLabel(source)} />
+            <StatCard label="Health synced" value={formatNullableTime(lastSyncedAt)} />
           </View>
           <View style={styles.sourceStatus}>
             <Ionicons color={COLORS.primary} name={isSystemTotalAvailable ? 'pulse-outline' : 'warning-outline'} size={18} />
@@ -269,38 +182,6 @@ export default function HomeScreen() {
           </View>
         </RevealView>
 
-        <RevealView delay={240} replayKey={stepReplayKey} style={styles.calculatedPanel}>
-          <View style={styles.calculatedHeader}>
-            <View>
-              <Text style={styles.calculatedEyebrow}>Experimental detector</Text>
-              <Text style={styles.calculatedTitle}>Calculated steps</Text>
-            </View>
-            <Ionicons color={COLORS.challenge} name="analytics-outline" size={22} />
-          </View>
-          <View style={styles.calculatedHero}>
-            <ProgressRing
-              caption="of daily goal"
-              goal={goal}
-              progressColor={COLORS.challenge}
-              resetAnimationKey={progressResetKey}
-              steps={calculatedSteps.steps}
-            />
-            <View style={styles.stepBlock}>
-              <AnimatedStepCount replayKey={stepReplayKey} steps={calculatedSteps.steps} style={styles.calculatedStepCount} />
-              <Text style={styles.stepLabel}>calculated today</Text>
-            </View>
-          </View>
-          <View style={styles.statsGrid}>
-            <StatCard label="Cadence" value={`${calculatedSteps.cadenceStepsPerMinute}/min`} />
-            <StatCard label="Confidence" value={`${calculatedSteps.confidence}%`} />
-            <StatCard label="Distance" value={`${calculatedSteps.distanceKm.toFixed(2)} km`} />
-            <StatCard label="Calories" value={calculatedSteps.caloriesKcal > 0 ? `${calculatedSteps.caloriesKcal} kcal` : '-'} />
-          </View>
-          <View style={styles.calculatedStatus}>
-            <Ionicons color={calculatedSteps.isAvailable ? COLORS.challenge : COLORS.warning} name={calculatedSteps.isAvailable ? 'pulse-outline' : 'warning-outline'} size={18} />
-            <Text style={styles.calculatedStatusText}>{calculatedSteps.debugMessage}</Text>
-          </View>
-        </RevealView>
       </ScrollView>
       <ToastStack messages={toastMessages} onHide={hideToast} />
       <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
@@ -340,70 +221,13 @@ const FormattedStatValue = ({ value }: FormattedStatValueProps) => {
   );
 };
 
-const getSourceLabel = (source: StepDataSource): string => {
-  if (source === 'apple-health') {
-    return 'Apple Health';
-  }
-
-  if (source === 'health-connect') {
-    return 'Health Connect';
-  }
-
-  if (source === 'live-sensor') {
-    return 'Live sensor';
-  }
-
-  return 'Local';
-};
-
-const formatSyncTime = (lastSyncedAt: string | null): string => {
-  if (lastSyncedAt === null) {
-    return 'Not yet';
-  }
-
-  return new Date(lastSyncedAt).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
-
-type ExistingDailySteps = Awaited<ReturnType<typeof readDailyStepsFromFirestore>>[string];
-
-type DailySyncSnapshot = {
-  goal: number;
-  source: StepDataSource;
-  steps: number;
-  userId: string | null;
-};
-
-type ComparableDailySteps = {
-  challengeSessionCount: number;
-  firstChallengeAt: string | null;
-  goal: number;
-  lastChallengeAt: string | null;
-  paceStepsPerMinute: number;
-  source: StepDataSource;
-  steps: number;
-  walkingTimeMs: number;
-};
-
-const hasNoDailyStepChanges = (existing: ExistingDailySteps, next: ComparableDailySteps): boolean =>
-  existing.steps === Math.max(0, Math.floor(next.steps))
-  && (existing.goal ?? 0) === next.goal
-  && existing.source === next.source
-  && (existing.challengeSessionCount ?? 0) === next.challengeSessionCount
-  && (existing.firstChallengeAt ?? null) === next.firstChallengeAt
-  && (existing.lastChallengeAt ?? null) === next.lastChallengeAt
-  && (existing.paceStepsPerMinute ?? 0) === Math.max(0, Math.floor(next.paceStepsPerMinute))
-  && (existing.walkingTimeMs ?? 0) === Math.max(0, Math.floor(next.walkingTimeMs));
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.color.appBackground,
   },
   container: {
-    paddingHorizontal: 24,
+    paddingHorizontal: THEME.spacing.screenHorizontal,
     paddingTop: 18,
     paddingBottom: 28,
     gap: 18,
@@ -600,55 +424,6 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   sourceStatusText: {
-    color: COLORS.text,
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  calculatedPanel: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.challenge,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 14,
-    padding: 14,
-  },
-  calculatedHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  calculatedEyebrow: {
-    color: COLORS.challenge,
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  calculatedTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-  calculatedHero: {
-    alignItems: 'center',
-    gap: 14,
-  },
-  calculatedStepCount: {
-    color: COLORS.challenge,
-    fontSize: 48,
-    fontWeight: '900',
-  },
-  calculatedStatus: {
-    alignItems: 'center',
-    backgroundColor: COLORS.challengeSoft,
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 9,
-    padding: 12,
-  },
-  calculatedStatusText: {
     color: COLORS.text,
     flex: 1,
     fontSize: 12,

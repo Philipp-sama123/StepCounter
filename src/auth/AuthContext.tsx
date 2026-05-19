@@ -12,6 +12,7 @@ import {
 } from '@firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
+import { registerBackgroundStepSync, unregisterBackgroundStepSync } from '../background/stepSyncTask';
 import { firebaseAuth, firestore, isFirebaseConfigured } from '../firebase/config';
 
 type AuthContextValue = {
@@ -68,6 +69,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       if (nextUser !== null) {
         void upsertUserProfile(nextUser);
+        void registerBackgroundStepSync();
+      } else {
+        void unregisterBackgroundStepSync();
       }
     });
   }, []);
@@ -115,6 +119,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       },
       signOutUser: async () => {
         if (firebaseAuth !== null) {
+          await unregisterBackgroundStepSync();
           await signOut(firebaseAuth);
         }
       },

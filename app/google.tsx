@@ -14,9 +14,11 @@ import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncDailySteps } from '../src/firebase/stepsSync';
-import { StepDataSource } from '../src/health/types';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import { getTodayString, readGoal, saveGoal } from '../src/storage/stepStorage';
+import { getStepSourceLabel } from '../src/utils/stepSource';
+import { formatNullableTime } from '../src/utils/timeFormat';
+import { appendToastMessage } from '../src/utils/toastQueue';
 
 export default function GoogleDataScreen() {
   const {
@@ -74,7 +76,7 @@ export default function GoogleDataScreen() {
   };
 
   const showToast = (message: string): void => {
-    setToastMessages((currentMessages) => [...currentMessages, { id: Date.now() + currentMessages.length, message }]);
+    setToastMessages((currentMessages) => appendToastMessage(currentMessages, { message }));
   };
 
   const hideToast = (id: number): void => {
@@ -160,8 +162,8 @@ export default function GoogleDataScreen() {
         <View style={styles.statsGrid}>
           <StatCard label="Progress" value={`${progressPercent.toFixed(2)}%`} />
           <StatCard label="Remaining" value={remainingSteps === 0 ? 'Done' : remainingSteps.toLocaleString()} />
-          <StatCard label="Source" value={getSourceLabel(source)} />
-          <StatCard label="Synced" value={formatSyncTime(lastSyncedAt)} />
+          <StatCard label="Source" value={getStepSourceLabel(source)} />
+          <StatCard label="Synced" value={formatNullableTime(lastSyncedAt)} />
         </View>
 
         <View style={styles.syncPanel}>
@@ -218,33 +220,6 @@ const FormattedStatValue = ({ value }: FormattedStatValueProps) => {
       <Text style={styles.statValueSuffix}>{match[3]}</Text>
     </Text>
   );
-};
-
-const getSourceLabel = (source: StepDataSource): string => {
-  if (source === 'apple-health') {
-    return 'Apple Health';
-  }
-
-  if (source === 'health-connect') {
-    return 'Health Connect';
-  }
-
-  if (source === 'live-sensor') {
-    return 'Live sensor';
-  }
-
-  return 'Local';
-};
-
-const formatSyncTime = (lastSyncedAt: string | null): string => {
-  if (lastSyncedAt === null) {
-    return 'Not yet';
-  }
-
-  return new Date(lastSyncedAt).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 };
 
 const styles = StyleSheet.create({

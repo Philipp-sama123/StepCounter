@@ -4,7 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '../src/auth/AuthContext';
 import { LoginScreen } from '../src/auth/LoginScreen';
-import { COLORS } from '../src/constants';
+import { COLORS, THEME } from '../src/constants';
 
 export default function RootLayout() {
   return (
@@ -36,8 +36,8 @@ const RootNavigator = () => {
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.stopped,
         tabBarStyle: {
-          borderTopColor: COLORS.border,
-          backgroundColor: COLORS.surface,
+          borderTopColor: THEME.color.cardBorder,
+          backgroundColor: THEME.color.card,
         },
       }}
     >
@@ -108,6 +108,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: THEME.color.appBackground,
   },
 });

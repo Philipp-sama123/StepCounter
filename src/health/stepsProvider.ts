@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import { readStepsForDateFromAppleHealth, readTodayStepsFromAppleHealth } from './appleHealth';
-import { readStepsForDateFromHealthConnect, readTodayStepsFromHealthConnect } from './healthConnect';
+import { readStepsForDateFromHealthConnect, readStepsForDatesFromHealthConnect, readTodayStepsFromHealthConnect } from './healthConnect';
 import { SystemStepResult } from './types';
 
 export const readTodayStepsFromSystemHealth = async (): Promise<SystemStepResult> => {
@@ -34,4 +34,16 @@ export const readStepsForDateFromSystemHealth = async (date: string): Promise<Sy
     reason: 'System health step data is not available on this platform.',
     source: 'unavailable',
   };
+};
+
+export const readStepsForDatesFromSystemHealth = async (dates: string[]): Promise<Record<string, SystemStepResult>> => {
+  if (Platform.OS === 'android') {
+    return readStepsForDatesFromHealthConnect(dates);
+  }
+
+  const entries = await Promise.all(dates.map(async (date) => [
+    date,
+    await readStepsForDateFromSystemHealth(date),
+  ] as const));
+  return Object.fromEntries(entries);
 };

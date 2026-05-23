@@ -3,9 +3,7 @@ import * as TaskManager from 'expo-task-manager';
 import { onAuthStateChanged, User } from '@firebase/auth';
 
 import { firebaseAuth } from '../firebase/config';
-import { readTodayStepsFromSystemHealth } from '../health/stepsProvider';
-import { syncDailyStepSnapshot } from '../services/dailyStepSync';
-import { getTodayString, readGoal, saveStepsForDate } from '../storage/stepStorage';
+import { syncTodayAndBackfill } from '../services/syncService';
 
 const BACKGROUND_STEP_SYNC_TASK = 'background-step-sync';
 const BACKGROUND_STEP_SYNC_INTERVAL_MINUTES = 60;
@@ -43,17 +41,7 @@ TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
       return BackgroundTask.BackgroundTaskResult.Success;
     }
 
-    const systemSteps = await readTodayStepsFromSystemHealth();
-    if (!systemSteps.available || systemSteps.steps === 0) {
-      return BackgroundTask.BackgroundTaskResult.Success;
-    }
-
-    const goal = await readGoal();
-    await saveStepsForDate(getTodayString(), systemSteps.steps);
-    const result = await syncDailyStepSnapshot({
-      goal,
-      source: systemSteps.source,
-      steps: systemSteps.steps,
+    const result = await syncTodayAndBackfill({
       userId: user.uid,
     });
 

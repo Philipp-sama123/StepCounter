@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { SyncDiagnosticRow } from '../src/components/debug/SyncDiagnosticRow';
 import { RevealView } from '../src/components/RevealView';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
@@ -15,7 +16,8 @@ import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
 import { StepDataSource } from '../src/health/types';
 import { DetectorSample, useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
 import { useStepCounter } from '../src/hooks/useStepCounter';
-import { syncDailyStepSnapshot } from '../src/services/dailyStepSync';
+import { readSyncDiagnostics, SyncDiagnosticEntry } from '../src/services/syncDiagnostics';
+import { syncTodayAndBackfill } from '../src/services/syncService';
 import { getTodayString, readGoal, readStepsForDate, StepHistoryEntry } from '../src/storage/stepStorage';
 import { appendToastMessage } from '../src/utils/toastQueue';
 
@@ -33,7 +35,7 @@ type StepReferenceState = {
   syncedAt: string | null;
 };
 
-type DebugView = 'calculated' | 'sensors';
+type DebugView = 'calculated' | 'sensors' | 'sync';
 
 export default function DebugScreen() {
   const { debugMessage, sensorLog, source, todaySteps } = useStepCounter('live');
@@ -43,6 +45,7 @@ export default function DebugScreen() {
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
+  const [syncDiagnostics, setSyncDiagnostics] = useState<SyncDiagnosticEntry[]>([]);
   const [references, setReferences] = useState<StepReferenceState>({
     localSteps: 0,
     systemReason: 'Loading references...',
@@ -60,13 +63,15 @@ export default function DebugScreen() {
   const [magnetometerLog, setMagnetometerLog] = useState<SensorSample[]>([]);
 
   const loadReferences = useCallback(async (): Promise<void> => {
-    const [localSteps, systemResult, savedGoal] = await Promise.all([
+    const [localSteps, systemResult, savedGoal, diagnostics] = await Promise.all([
       readStepsForDate(getTodayString()),
       readTodayStepsFromSystemHealth(),
       readGoal(),
+      readSyncDiagnostics(),
     ]);
 
     setGoal(savedGoal);
+    setSyncDiagnostics(diagnostics);
     setReferences({
       localSteps,
       systemReason: systemResult.available ? `Loaded from ${getSourceLabel(systemResult.source)}.` : systemResult.reason,
@@ -92,9 +97,6 @@ export default function DebugScreen() {
         readTodayStepsFromSystemHealth(),
         readGoal(),
       ]);
-      const nextSteps = systemResult.available ? systemResult.steps : Math.max(localSteps, todaySteps);
-      const nextSource = systemResult.available ? systemResult.source : source;
-
       setGoal(savedGoal);
       setReferences({
         localSteps,
@@ -104,12 +106,12 @@ export default function DebugScreen() {
         syncedAt: new Date().toISOString(),
       });
 
-      const result = await syncDailyStepSnapshot({
-        goal: savedGoal,
-        source: nextSource,
-        steps: nextSteps,
+      const result = await syncTodayAndBackfill({
+        fallbackSource: source,
+        fallbackSteps: Math.max(localSteps, todaySteps),
         userId: user?.uid ?? null,
       });
+      setSyncDiagnostics(await readSyncDiagnostics());
       showServerToast(result.message, result.ok ? 'standard' : 'error');
     } finally {
       setIsSavingToFirestore(false);
@@ -218,7 +220,7 @@ export default function DebugScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.subtitle}>Debugging</Text>
-            <Text style={styles.title}>{debugView === 'calculated' ? 'Calculated steps' : 'Sensor data'}</Text>
+            <Text style={styles.title}>{getDebugTitle(debugView)}</Text>
           </View>
           <Ionicons color={COLORS.challenge} name="bug-outline" size={28} />
         </View>
@@ -239,6 +241,14 @@ export default function DebugScreen() {
             style={[styles.segmentButton, debugView === 'sensors' ? styles.segmentButtonActive : null]}
           >
             <Text style={[styles.segmentText, debugView === 'sensors' ? styles.segmentTextActive : null]}>Sensors</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            accessibilityLabel="Show sync diagnostics"
+            accessibilityRole="button"
+            onPress={() => setDebugView('sync')}
+            style={[styles.segmentButton, debugView === 'sync' ? styles.segmentButtonActive : null]}
+          >
+            <Text style={[styles.segmentText, debugView === 'sync' ? styles.segmentTextActive : null]}>Sync</Text>
           </AnimatedPressable>
         </View>
 
@@ -322,7 +332,7 @@ export default function DebugScreen() {
             </View>
           </View>
         </RevealView>
-        ) : (
+        ) : debugView === 'sensors' ? (
           <>
             <RevealView style={styles.referencePanel}>
               <Text style={styles.sectionTitle}>Step references</Text>
@@ -370,6 +380,20 @@ export default function DebugScreen() {
 
             <Text style={styles.debugText}>{debugMessage}</Text>
           </>
+        ) : (
+          <RevealView>
+            <View style={styles.consoleSection}>
+              <ConsoleHeader meta="last 80" title="Sync diagnostics" />
+              <Text style={styles.sectionText}>
+                Shows what the sync service saw before writing Firestore: system health steps, previous Firestore value, final saved value, and why it changed or skipped.
+              </Text>
+              <View style={styles.syncAuditList}>
+                {syncDiagnostics.length > 0 ? syncDiagnostics.slice(0, 30).map((entry) => (
+                  <SyncDiagnosticRow entry={entry} key={entry.id} />
+                )) : <Text style={styles.emptyAuditText}>No sync diagnostics yet. Press Save reference to Firestore or reopen the app.</Text>}
+              </View>
+            </View>
+          </RevealView>
         )}
       </ScrollView>
       <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
@@ -390,6 +414,18 @@ const ReferenceCard = ({ label, note, value }: ReferenceCardProps) => (
     {note === undefined ? null : <Text style={styles.referenceNote} numberOfLines={2}>{note}</Text>}
   </View>
 );
+
+const getDebugTitle = (debugView: DebugView): string => {
+  if (debugView === 'calculated') {
+    return 'Calculated steps';
+  }
+
+  if (debugView === 'sensors') {
+    return 'Sensor data';
+  }
+
+  return 'Sync diagnostics';
+};
 
 const ExplainerCard = ({ label, text, value }: { label: string; text: string; value: string }) => (
   <View style={styles.explainerCard}>
@@ -745,6 +781,15 @@ const styles = StyleSheet.create({
     color: COLORS.challenge,
     fontSize: 11,
     fontWeight: '800',
+  },
+  syncAuditList: {
+    gap: 10,
+  },
+  emptyAuditText: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
   },
   saveButton: {
     alignItems: 'center',

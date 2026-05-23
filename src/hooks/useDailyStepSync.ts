@@ -3,7 +3,8 @@ import { AppState, AppStateStatus } from 'react-native';
 
 import { StepDataSource } from '../health/types';
 import { ToastMessageItem } from '../components/ToastMessage';
-import { DailySyncSnapshot, syncDailyStepSnapshot } from '../services/dailyStepSync';
+import { DailySyncSnapshot } from '../services/dailyStepSync';
+import { syncSnapshotAndBackfill } from '../services/syncService';
 
 type DailyStepSyncParams = {
   goal: number;
@@ -36,7 +37,7 @@ export const useDailyStepSync = ({ goal, onMessage, source, steps, userId }: Dai
     snapshot: DailySyncSnapshot,
     options: { notify: boolean; showNoChanges?: boolean } = { notify: false },
   ): Promise<void> => {
-    const result = await syncDailyStepSnapshot(snapshot);
+    const result = await syncSnapshotAndBackfill(snapshot);
     if (options.notify && (result.changed || options.showNoChanges || !result.ok)) {
       onMessage(result.message, result.ok ? 'standard' : 'error');
     }
@@ -52,7 +53,7 @@ export const useDailyStepSync = ({ goal, onMessage, source, steps, userId }: Dai
   }, [syncSnapshot]);
 
   useEffect(() => {
-    if (hasSyncedOnOpenRef.current || userId === null || steps === 0) {
+    if (hasSyncedOnOpenRef.current || userId === null) {
       return;
     }
 

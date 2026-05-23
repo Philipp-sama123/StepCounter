@@ -1,7 +1,8 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
@@ -16,7 +17,8 @@ import {
   StoredChallengeSession,
   syncLocalStepDataToFirestore,
 } from '../src/firebase/stepsSync';
-import { readStepsForDateFromSystemHealth } from '../src/health/stepsProvider';
+import { readStepsForDatesFromSystemHealth } from '../src/health/stepsProvider';
+import { syncTodayAndBackfill } from '../src/services/syncService';
 import {
   mergeChallengeSessionsForDate,
   readGoal,
@@ -42,7 +44,10 @@ export default function HistoryScreen() {
   const [selectedSession, setSelectedSession] = useState<StoredChallengeSession | null>(null);
   const [selectedStorageDetail, setSelectedStorageDetail] = useState<StorageDetail | null>(null);
   const [sessionStorageCopies, setSessionStorageCopies] = useState<Record<string, SessionStorageCopies>>({});
+  const [isSyncingHistory, setIsSyncingHistory] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [graphReplayKey, setGraphReplayKey] = useState(0);
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
   const sessionGraphAnimation = useRef(new Animated.Value(0)).current;
 
   useFocusEffect(
@@ -148,7 +153,7 @@ export default function HistoryScreen() {
       return () => {
         isActive = false;
       };
-    }, [user]),
+    }, [historyReloadKey, user]),
   );
 
   useEffect(() => {
@@ -181,14 +186,43 @@ export default function HistoryScreen() {
     null,
   );
 
+  const handleSyncHistory = async (): Promise<void> => {
+    setIsSyncingHistory(true);
+    try {
+      const result = await syncTodayAndBackfill({
+        userId: user?.uid ?? null,
+      });
+      setSyncMessage(result.message);
+      setHistoryReloadKey((currentKey) => currentKey + 1);
+      setGraphReplayKey((currentKey) => currentKey + 1);
+    } finally {
+      setIsSyncingHistory(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.title}>Statistics</Text>
-          <Text style={styles.subtitle}>{`Last 7 days · ${dataSourceLabel}`}</Text>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>Statistics</Text>
+            <Text style={styles.subtitle}>{`Last 7 days · ${dataSourceLabel}`}</Text>
+          </View>
+          <AnimatedPressable
+            accessibilityLabel="Sync missing Health Connect days"
+            accessibilityRole="button"
+            disabled={isSyncingHistory}
+            onPress={() => {
+              void handleSyncHistory();
+            }}
+            style={styles.syncButton}
+          >
+            {isSyncingHistory ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="sync-outline" size={18} />}
+            <Text style={styles.syncButtonText}>{isSyncingHistory ? 'Syncing' : 'Sync'}</Text>
+          </AnimatedPressable>
         </View>
+        {syncMessage === null ? null : <Text style={styles.syncMessage}>{syncMessage}</Text>}
 
         <View style={styles.segmentedControl}>
           <AnimatedPressable
@@ -559,12 +593,9 @@ const getMostRecentRemoteGoal = (remoteDailySteps: Awaited<ReturnType<typeof rea
 };
 
 const readSystemStepsByDate = async (dates: string[]): Promise<Record<string, number>> => {
-  const results = await Promise.all(dates.map(async (date) => ({
-    date,
-    result: await readStepsForDateFromSystemHealth(date),
-  })));
+  const results = await readStepsForDatesFromSystemHealth(dates);
 
-  return results.reduce<Record<string, number>>((stepsByDate, { date, result }) => {
+  return Object.entries(results).reduce<Record<string, number>>((stepsByDate, [date, result]) => {
     if (result.available && result.steps > 0) {
       stepsByDate[date] = result.steps;
     }
@@ -696,6 +727,13 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  headerCopy: {
+    flex: 1,
     gap: 4,
   },
   title: {
@@ -707,6 +745,27 @@ const styles = StyleSheet.create({
     color: COLORS.mutedText,
     fontSize: 14,
     fontWeight: '800',
+  },
+  syncButton: {
+    alignItems: 'center',
+    backgroundColor: COLORS.challenge,
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 7,
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  syncButtonText: {
+    color: COLORS.surface,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  syncMessage: {
+    color: COLORS.challenge,
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
+    marginTop: -8,
   },
   chartSurface: {
     borderRadius: 8,

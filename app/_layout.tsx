@@ -56,14 +56,6 @@ const RootNavigator = () => {
         }}
       />
       <Tabs.Screen
-        name="google"
-        options={{
-          title: 'Google Data',
-          href: null,
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="cloud-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
         name="history"
         options={{
           title: 'History',

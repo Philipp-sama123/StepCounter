@@ -39,9 +39,9 @@ EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=
 EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=
 ```
 
-For Android, use the package name from `android/app/build.gradle`: `com.anonymous.StepCounter`.
+For Android, use the package name from `app.json`: `com.philipp.stepcounter`.
 
-For iOS, use the bundle identifier from Xcode: `com.anonymous.StepCounter`.
+For iOS, use the bundle identifier from `app.json`: `com.philipp.stepcounter`.
 
 ## 4. Firestore Structure
 

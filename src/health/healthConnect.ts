@@ -7,6 +7,8 @@ type HealthConnectPermission = {
   recordType: 'Steps';
 };
 
+type HealthConnectModule = typeof import('react-native-health-connect');
+
 const READ_STEPS_PERMISSION: HealthConnectPermission = {
   accessType: 'read',
   recordType: 'Steps',
@@ -36,6 +38,8 @@ const getLocalDateRange = (dateString: string): { end: Date; start: Date } => {
 const hasReadStepsPermission = (permissions: HealthConnectPermission[]): boolean =>
   permissions.some((permission) => permission.accessType === 'read' && permission.recordType === 'Steps');
 
+let readyHealthConnectPromise: Promise<HealthConnectModule | null> | null = null;
+
 export const readTodayStepsFromHealthConnect = async (): Promise<SystemStepResult> => {
   const today = getStartOfToday();
   const dateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -61,37 +65,17 @@ export const readStepsForDatesFromHealthConnect = async (dateStrings: string[]):
   }
 
   try {
-    const healthConnect = await import('react-native-health-connect');
-    const status = await healthConnect.getSdkStatus();
+    const healthConnect = await getReadyHealthConnect();
 
-    if (status !== healthConnect.SdkAvailabilityStatus.SDK_AVAILABLE) {
+    if (healthConnect === null) {
       return toUnavailableResults(dateStrings, {
         available: false,
-        reason: 'Health Connect is not available on this device.',
+        reason: 'Health Connect is unavailable or steps permission was not granted.',
         source: 'unavailable',
       });
     }
 
-    const initialized = await healthConnect.initialize();
-    if (!initialized) {
-      return toUnavailableResults(dateStrings, {
-        available: false,
-        reason: 'Health Connect could not be initialized.',
-        source: 'unavailable',
-      });
-    }
-
-    const grantedPermissions = await healthConnect.requestPermission([READ_STEPS_PERMISSION]);
-    if (!hasReadStepsPermission(grantedPermissions as HealthConnectPermission[])) {
-      return toUnavailableResults(dateStrings, {
-        available: false,
-        reason: 'Health Connect steps permission was not granted.',
-        source: 'unavailable',
-      });
-    }
-
-    const entries: Array<[string, SystemStepResult]> = [];
-    for (const dateString of dateStrings) {
+    const entries = await Promise.all(dateStrings.map(async (dateString): Promise<[string, SystemStepResult]> => {
       const { end, start } = getLocalDateRange(dateString);
       const result = await healthConnect.aggregateRecord({
         recordType: 'Steps',
@@ -102,12 +86,12 @@ export const readStepsForDatesFromHealthConnect = async (dateStrings: string[]):
         },
       });
 
-      entries.push([dateString, {
+      return [dateString, {
         available: true,
         source: 'health-connect',
         steps: Math.max(0, Math.floor(result.COUNT_TOTAL ?? 0)),
-      }]);
-    }
+      }];
+    }));
 
     return Object.fromEntries(entries);
   } catch (error) {
@@ -118,6 +102,38 @@ export const readStepsForDatesFromHealthConnect = async (dateStrings: string[]):
       source: 'unavailable',
     });
   }
+};
+
+const getReadyHealthConnect = async (): Promise<HealthConnectModule | null> => {
+  readyHealthConnectPromise ??= initializeHealthConnect();
+  const healthConnect = await readyHealthConnectPromise;
+
+  if (healthConnect === null) {
+    readyHealthConnectPromise = null;
+  }
+
+  return healthConnect;
+};
+
+const initializeHealthConnect = async (): Promise<HealthConnectModule | null> => {
+  const healthConnect = await import('react-native-health-connect');
+  const status = await healthConnect.getSdkStatus();
+
+  if (status !== healthConnect.SdkAvailabilityStatus.SDK_AVAILABLE) {
+    return null;
+  }
+
+  const initialized = await healthConnect.initialize();
+  if (!initialized) {
+    return null;
+  }
+
+  const grantedPermissions = await healthConnect.requestPermission([READ_STEPS_PERMISSION]);
+  if (!hasReadStepsPermission(grantedPermissions as HealthConnectPermission[])) {
+    return null;
+  }
+
+  return healthConnect;
 };
 
 const toUnavailableResults = (

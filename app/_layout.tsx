@@ -33,11 +33,18 @@ const RootNavigator = () => {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.stopped,
+        tabBarActiveTintColor: THEME.color.tabActive,
+        tabBarInactiveTintColor: THEME.color.tabInactive,
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '900',
+        },
         tabBarStyle: {
-          borderTopColor: THEME.color.cardBorder,
-          backgroundColor: THEME.color.card,
+          backgroundColor: THEME.color.tabBackground,
+          borderTopColor: THEME.color.tabBackground,
+          minHeight: 64,
+          paddingBottom: 8,
+          paddingTop: 6,
         },
       }}
     >

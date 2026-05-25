@@ -1,19 +1,25 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { useFocusEffect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, TextStyle, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
+import { ChallengeReward, ChallengeRewardOverlay } from '../src/components/challenge/ChallengeRewardOverlay';
+import { ChallengeSourceTabs, ChallengeTrackingMode } from '../src/components/challenge/ChallengeSourceTabs';
+import { MovementInsightPanel } from '../src/components/challenge/MovementInsightPanel';
 import { GoalModal } from '../src/components/GoalModal';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { HeaderIconButton } from '../src/components/layout/HeaderIconButton';
+import { PageHeader } from '../src/components/layout/PageHeader';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
-import { COLORS, DEFAULT_GOAL, THEME } from '../src/constants';
+import { AppButton } from '../src/components/ui/AppButton';
+import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncChallengeSession } from '../src/firebase/stepsSync';
 import { publishOwnSharedProfileSnapshot } from '../src/services/sharedProfilePublish';
 import { useStepCounter } from '../src/hooks/useStepCounter';
@@ -27,30 +33,19 @@ import {
     saveChallengeSession,
     saveDailyChallengeGoal,
 } from '../src/storage/stepStorage';
-import { getStepSourceLabel } from '../src/utils/stepSource';
 import { appendToastMessage } from '../src/utils/toastQueue';
-
-type AccelerometerSample = {
-    magnitude: number;
-    timestamp: string;
-    x: number;
-    y: number;
-    z: number;
-};
-
-type GenericSensorSample = {
-    headline: string;
-    line: string;
-    timestamp: string;
-};
-
-type ChallengeReward = {
-    durationMs: number;
-    goalPercent: number;
-    steps: number;
-};
+import {
+    AccelerometerSample,
+    formatAxis,
+    getAccelerationMagnitude,
+    getRollingAverages,
+    getVectorMagnitude,
+    GenericSensorSample,
+} from '../src/utils/challengeMetrics';
 
 export default function ChallengeScreen() {
+    const [trackingMode, setTrackingMode] = useState<ChallengeTrackingMode>('live');
+    const isFocused = useIsFocused();
     const {
         debugMessage,
         isAvailable,
@@ -62,7 +57,7 @@ export default function ChallengeScreen() {
         status,
         todaySteps,
         canRefresh,
-    } = useStepCounter('live');
+    } = useStepCounter(trackingMode, isFocused);
     const { signOutUser, user } = useAuth();
     const [goal, setGoal] = useState(DEFAULT_GOAL);
     const [challengeGoal, setChallengeGoal] = useState(DEFAULT_GOAL);
@@ -180,7 +175,7 @@ export default function ChallengeScreen() {
     }, [isChallengeActive, sessionOpacity]);
 
     useEffect(() => {
-        if (!isChallengeActive) {
+        if (!isChallengeActive || !isFocused) {
             return undefined;
         }
 
@@ -191,10 +186,10 @@ export default function ChallengeScreen() {
         return () => {
             clearInterval(timer);
         };
-    }, [isChallengeActive]);
+    }, [isChallengeActive, isFocused]);
 
     useEffect(() => {
-        if (!isChallengeActive) {
+        if (!isChallengeActive || !isFocused) {
             setAccelerometerAvailable(null);
             setAccelerometerLog([]);
             return undefined;
@@ -240,10 +235,10 @@ export default function ChallengeScreen() {
             isMounted = false;
             subscription?.remove();
         };
-    }, [isChallengeActive]);
+    }, [isChallengeActive, isFocused]);
 
     useEffect(() => {
-        if (!isChallengeActive) {
+        if (!isChallengeActive || !isFocused) {
             setGyroscopeAvailable(null);
             setGyroscopeLog([]);
             return undefined;
@@ -290,7 +285,7 @@ export default function ChallengeScreen() {
             isMounted = false;
             gyroscopeSubscription?.remove();
         };
-    }, [isChallengeActive]);
+    }, [isChallengeActive, isFocused]);
 
     useFocusEffect(
         useCallback(() => {
@@ -315,7 +310,6 @@ export default function ChallengeScreen() {
     const sessionDurationMs = isChallengeActive && challengeStartAt !== null ? Math.max(0, sessionClock - challengeStartAt) : 0;
     const sessionMinutes = Math.max(1, sessionDurationMs / 60000);
     const sessionPace = isChallengeActive ? Math.round(currentChallengeDelta / sessionMinutes) : 0;
-    const challengeGoalPercent = currentChallengeGoal > 0 ? Math.min(100, (currentChallengeDelta / currentChallengeGoal) * 100) : 0;
     const dailyChallengeGoalPercent = dailyChallengeGoal > 0 ? Math.min(100, (idleChallengeSteps / dailyChallengeGoal) * 100) : 0;
     const rollingAverages = getRollingAverages({
         accelerometerLog,
@@ -323,46 +317,79 @@ export default function ChallengeScreen() {
         nowMs: sessionClock,
         sensorLog,
     });
+    const isLiveMode = trackingMode === 'live';
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            <StatusBar style="dark" />
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.subtitle}>Challenge Mode</Text>
-                        <Text style={styles.appName}>{displayName}</Text>
-                    </View>
-                    <View style={styles.headerActions}>
-                        <AnimatedPressable
-                            accessibilityLabel="Edit challenge goal"
-                            accessibilityRole="button"
-                            onPress={() => {
-                                setGoalModalMode('session-challenge');
-                                setIsGoalModalVisible(true);
-                            }}
-                            style={styles.iconButton}
-                        >
-                            <Ionicons color={COLORS.text} name="settings-outline" size={24} />
-                        </AnimatedPressable>
-                        <AnimatedPressable
-                            accessibilityLabel="Sign out"
-                            accessibilityRole="button"
-                            onPress={() => {
-                                void signOutUser();
-                            }}
-                            style={styles.iconButton}
-                        >
-                            <Ionicons color={COLORS.text} name="log-out-outline" size={23} />
-                        </AnimatedPressable>
-                    </View>
-                </View>
+        <AppScreen
+            contentStyle={styles.container}
+            overlays={(
+                <>
+                    <GoalModal
+                        currentGoal={goalModalMode === 'daily-challenge' ? dailyChallengeGoal : challengeGoal}
+                        helperText={
+                            goalModalMode === 'daily-challenge'
+                                ? 'Choose how many challenge-session steps you want to collect today.'
+                                : 'Choose a target for each individual challenge session.'
+                        }
+                        isVisible={isGoalModalVisible}
+                        onClose={() => setIsGoalModalVisible(false)}
+                        onSave={(nextGoal) => {
+                            void handleSaveGoal(nextGoal);
+                        }}
+                        title={goalModalMode === 'daily-challenge' ? 'Daily challenge goal' : 'Session challenge goal'}
+                    />
+                    <ToastStack messages={toastMessages} onHide={hideToast} />
+                    <ToastStack messages={sessionToastMessages} onHide={hideSessionToast} placement="bottom" />
+                    <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
+                    <ChallengeRewardOverlay
+                        onDone={hideChallengeReward}
+                        reward={challengeReward}
+                    />
+                </>
+            )}
+        >
+                <PageHeader
+                    accessory={(
+                        <>
+                            <HeaderIconButton
+                                accessibilityLabel="Edit challenge goal"
+                                icon="settings-outline"
+                                onPress={() => {
+                                    setGoalModalMode('session-challenge');
+                                    setIsGoalModalVisible(true);
+                                }}
+                            />
+                            <HeaderIconButton
+                                accessibilityLabel="Sign out"
+                                icon="log-out-outline"
+                                onPress={() => {
+                                    void signOutUser();
+                                }}
+                            />
+                        </>
+                    )}
+                    subtitle="Challenge Mode"
+                    title={displayName}
+                />
 
                 <View style={styles.hero}>
+                    <ChallengeSourceTabs
+                        disabled={isChallengeActive}
+                        onChange={(nextMode) => {
+                            setTrackingMode(nextMode);
+                            setProgressResetKey((currentKey) => currentKey + 1);
+                            setStepReplayKey((currentKey) => currentKey + 1);
+                            showToast(`Challenge source changed to ${nextMode === 'live' ? 'Live sensor' : 'Health data'}.`);
+                        }}
+                        style={styles.modeTabs}
+                        value={trackingMode}
+                    />
+
                     <ProgressRing
                         caption={isChallengeActive ? 'of challenge goal' : 'of daily challenge goal'}
                         completeColor={COLORS.challenge}
                         goal={ringGoal}
+                        overflowColor={COLORS.challengeText}
                         progressColor={COLORS.challenge}
                         resetAnimationKey={progressResetKey}
                         steps={ringSteps}
@@ -384,6 +411,11 @@ export default function ChallengeScreen() {
                         {isChallengeActive
                             ? `Challenge goal ${currentChallengeGoal.toLocaleString()}`
                             : `Daily challenge goal ${dailyChallengeGoal.toLocaleString()} · Session goal ${challengeGoal.toLocaleString()}`}
+                    </Text>
+                    <Text style={styles.modeHint}>
+                        {isLiveMode
+                            ? 'Live mode reacts while you walk. Best for testing immediate sensor behavior.'
+                            : 'Health data mode reads the system total. Best for comparing against Google Fit / Health Connect.'}
                     </Text>
 
                     {!isChallengeActive ? (
@@ -433,18 +465,16 @@ export default function ChallengeScreen() {
                     </View>
 
                     {canRefresh && (
-                        <AnimatedPressable
-                            accessibilityLabel="Refresh sensor step data"
-                            accessibilityRole="button"
-                            disabled={isRefreshing}
+                        <AppButton
+                            accessibilityLabel={isLiveMode ? 'Refresh sensor step data' : 'Refresh health step data'}
+                            busy={isRefreshing}
+                            icon="refresh-outline"
+                            label={isLiveMode ? 'Refresh live' : 'Refresh health'}
                             onPress={() => {
                                 void handleRefreshSteps();
                             }}
-                            style={({ pressed }) => [styles.refreshButton, isRefreshing ? styles.refreshing : null, pressed ? styles.pressed : null]}
-                        >
-                            {isRefreshing ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="refresh-outline" size={18} />}
-                            <Text style={styles.refreshButtonText}>{isRefreshing ? 'Refreshing' : 'Refresh steps'}</Text>
-                        </AnimatedPressable>
+                            style={styles.refreshButton}
+                        />
                     )}
 
                     {hasReachedGoal ? (
@@ -453,7 +483,7 @@ export default function ChallengeScreen() {
                         </View>
                     ) : null}
 
-                    <View style={{ marginTop: 12, alignItems: 'center' }}>
+                    <View style={styles.challengeAction}>
                         <AnimatedPressable
                             activePulse={isChallengeActive}
                             accessibilityLabel={isChallengeActive ? 'Pause challenge' : 'Start challenge'}
@@ -541,414 +571,36 @@ export default function ChallengeScreen() {
                     </View>
                 </View>
 
-                <View style={styles.sensorSection}>
-                    <View style={styles.averagePanel}>
-                        <View style={styles.averageHeader}>
-                            <View>
-                                <Text style={styles.averageTitle}>Movement insight</Text>
-                                <Text style={styles.averageDescription}>Animated live signals from your last minute of movement.</Text>
-                            </View>
-                            <Text style={styles.averageMeta}>{isChallengeActive ? 'running' : 'idle'}</Text>
-                        </View>
-                        <View style={styles.averageGrid}>
-                            <AverageMetric label="Cadence" suffix="/min" value={rollingAverages.stepsPerMinute} />
-                            <AverageMetric label="Acceleration" suffix="g" value={rollingAverages.accelerometerMagnitude} />
-                            <AverageMetric label="Rotation" suffix="rad/s" value={rollingAverages.gyroscopeMagnitude} />
-                        </View>
-                    </View>
+                <MovementInsightPanel
+                    currentChallengeDelta={currentChallengeDelta}
+                    currentChallengeGoal={currentChallengeGoal}
+                    dailyChallengeGoal={dailyChallengeGoal}
+                    dailyChallengeGoalPercent={dailyChallengeGoalPercent}
+                    debugMessage={debugMessage}
+                    isChallengeActive={isChallengeActive}
+                    rollingAverages={rollingAverages}
+                    sessionDurationMs={sessionDurationMs}
+                    sessionPace={sessionPace}
+                    source={source}
+                />
 
-                    <View style={styles.sensorSummary}>
-                        <View style={styles.sensorSummaryItem}>
-                            <Text style={styles.sensorSummaryLabel}>Source</Text>
-                            <Text style={styles.sensorSummaryValue}>{getStepSourceLabel(source)}</Text>
-                        </View>
-                        <View style={styles.sensorSummaryItem}>
-                            <Text style={styles.sensorSummaryLabel}>Session</Text>
-                            <Text style={styles.sensorSummaryValue}>{currentChallengeDelta.toLocaleString()}</Text>
-                        </View>
-                        <View style={styles.sensorSummaryItem}>
-                            <Text style={styles.sensorSummaryLabel}>Pace</Text>
-                            <Text style={styles.sensorSummaryValue}>{`${sessionPace.toLocaleString()}/min`}</Text>
-                        </View>
-                    </View>
-
-                    <View style={styles.challengeDetailPanel}>
-                        <View style={styles.challengeDetailItem}>
-                            <Ionicons color={COLORS.challenge} name="timer-outline" size={18} />
-                            <View>
-                                <Text style={styles.challengeDetailLabel}>Duration</Text>
-                                <Text style={styles.challengeDetailValue}>{formatDuration(sessionDurationMs)}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.challengeDetailItem}>
-                            <Ionicons color={COLORS.challenge} name="flag-outline" size={18} />
-                            <View>
-                                <Text style={styles.challengeDetailLabel}>{isChallengeActive ? 'Challenge goal' : 'Daily challenge'}</Text>
-                                <Text style={styles.challengeDetailValueOrange}>
-                                    {`${(isChallengeActive ? challengeGoalPercent : dailyChallengeGoalPercent).toFixed(1)}%`}
-                                </Text>
-                            </View>
-                        </View>
-                        <View style={styles.challengeDetailItem}>
-                            <Ionicons color={COLORS.challenge} name="walk-outline" size={18} />
-                            <View>
-                                <Text style={styles.challengeDetailLabel}>{isChallengeActive ? 'Goal steps' : 'Daily goal'}</Text>
-                                <Text style={styles.challengeDetailValueOrange}>
-                                    {isChallengeActive ? currentChallengeGoal.toLocaleString() : dailyChallengeGoal.toLocaleString()}
-                                </Text>
-                            </View>
-                        </View>
-                    </View>
-
-                    <Text style={styles.sensorHint}>{debugMessage}</Text>
-                </View>
-            </ScrollView>
-
-            <GoalModal
-                currentGoal={goalModalMode === 'daily-challenge' ? dailyChallengeGoal : challengeGoal}
-                helperText={
-                    goalModalMode === 'daily-challenge'
-                        ? 'Choose how many challenge-session steps you want to collect today.'
-                        : 'Choose a target for each individual challenge session.'
-                }
-                isVisible={isGoalModalVisible}
-                onClose={() => setIsGoalModalVisible(false)}
-                onSave={(nextGoal) => {
-                    void handleSaveGoal(nextGoal);
-                }}
-                title={goalModalMode === 'daily-challenge' ? 'Daily challenge goal' : 'Session challenge goal'}
-            />
-            <ToastStack messages={toastMessages} onHide={hideToast} />
-            <ToastStack messages={sessionToastMessages} onHide={hideSessionToast} placement="bottom" />
-            <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
-            <ChallengeRewardOverlay
-                onDone={hideChallengeReward}
-                reward={challengeReward}
-            />
-        </SafeAreaView>
+        </AppScreen>
     );
 }
-
-const ChallengeRewardOverlay = ({
-    onDone,
-    reward,
-}: {
-    onDone: () => void;
-    reward: ChallengeReward | null;
-}) => {
-    const overlayProgress = useRef(new Animated.Value(0)).current;
-    const cardProgress = useRef(new Animated.Value(0)).current;
-    const exitProgress = useRef(new Animated.Value(0)).current;
-    const isDismissingRef = useRef(false);
-
-    useEffect(() => {
-        if (reward === null) {
-            overlayProgress.setValue(0);
-            cardProgress.setValue(0);
-            exitProgress.setValue(0);
-            isDismissingRef.current = false;
-            return undefined;
-        }
-
-        overlayProgress.setValue(0);
-        cardProgress.setValue(0);
-        exitProgress.setValue(0);
-        isDismissingRef.current = false;
-        const animation = Animated.parallel([
-            Animated.timing(overlayProgress, {
-                duration: 280,
-                easing: Easing.out(Easing.cubic),
-                toValue: 1,
-                useNativeDriver: true,
-            }),
-            Animated.spring(cardProgress, {
-                friction: 7,
-                tension: 140,
-                toValue: 1,
-                useNativeDriver: true,
-            }),
-        ]);
-
-        animation.start();
-
-        return () => {
-            animation.stop();
-        };
-    }, [cardProgress, exitProgress, overlayProgress, reward]);
-
-    if (reward === null) {
-        return null;
-    }
-
-    const dismissReward = (): void => {
-        if (isDismissingRef.current) {
-            return;
-        }
-
-        isDismissingRef.current = true;
-        Animated.parallel([
-            Animated.timing(exitProgress, {
-                duration: 360,
-                easing: Easing.in(Easing.cubic),
-                toValue: 1,
-                useNativeDriver: true,
-            }),
-            Animated.timing(overlayProgress, {
-                delay: 120,
-                duration: 300,
-                easing: Easing.in(Easing.cubic),
-                toValue: 0,
-                useNativeDriver: true,
-            }),
-        ]).start(({ finished }) => {
-            if (finished) {
-                onDone();
-            }
-        });
-    };
-
-    const overlayOpacity = overlayProgress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 1],
-    });
-    const cardScale = cardProgress.interpolate({
-        inputRange: [0, 0.72, 1],
-        outputRange: [0.72, 1.06, 1],
-    });
-    const cardTranslateY = cardProgress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-260, 0],
-    });
-    const cardTranslateX = exitProgress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, 460],
-    });
-    const iconScale = cardProgress.interpolate({
-        inputRange: [0, 0.35, 0.72, 1],
-        outputRange: [0.35, 1.2, 0.96, 1],
-    });
-    const cardOpacity = cardProgress.interpolate({
-        inputRange: [0, 0.25, 1],
-        outputRange: [0, 1, 1],
-    });
-    return (
-        <Animated.View style={[styles.rewardOverlay, { opacity: overlayOpacity }]}>
-            <View style={styles.rewardGlow} />
-            <Pressable
-                accessibilityLabel="Close challenge reward"
-                accessibilityRole="button"
-                onPress={dismissReward}
-            >
-                <Animated.View
-                    style={[
-                        styles.rewardCard,
-                        {
-                            opacity: cardOpacity,
-                            transform: [
-                                { translateX: cardTranslateX },
-                                { translateY: cardTranslateY },
-                                { scale: cardScale },
-                            ],
-                        },
-                    ]}
-                >
-                    <Animated.View style={[styles.rewardIcon, { transform: [{ scale: iconScale }] }]}>
-                        <Ionicons color={COLORS.surface} name="trophy-outline" size={42} />
-                    </Animated.View>
-                    <Text style={styles.rewardEyebrow}>Challenge complete</Text>
-                    <Text style={styles.rewardSteps}>{`+${reward.steps.toLocaleString()}`}</Text>
-                    <Text style={styles.rewardLabel}>session steps</Text>
-                    <View style={styles.rewardStats}>
-                        <View style={styles.rewardStat}>
-                            <Text style={styles.rewardStatValue}>{`${reward.goalPercent.toFixed(1)}%`}</Text>
-                            <Text style={styles.rewardStatLabel}>goal</Text>
-                        </View>
-                        <View style={styles.rewardStat}>
-                            <Text style={styles.rewardStatValue}>{formatDuration(reward.durationMs)}</Text>
-                            <Text style={styles.rewardStatLabel}>time</Text>
-                        </View>
-                    </View>
-                    <Text style={styles.rewardDismiss}>Tap to continue</Text>
-                </Animated.View>
-            </Pressable>
-        </Animated.View>
-    );
-};
-
-const formatDuration = (durationMs: number): string => {
-    const totalSeconds = Math.floor(durationMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-};
 
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
 
-const getAccelerationMagnitude = (x: number, y: number, z: number): number =>
-    Math.sqrt(x * x + y * y + z * z);
-
-const getVectorMagnitude = (x: number, y: number, z: number): number =>
-    Math.sqrt(x * x + y * y + z * z);
-
-const formatAxis = (value: number): string => value.toFixed(2);
-
-type RollingAverageInput = {
-    accelerometerLog: AccelerometerSample[];
-    gyroscopeLog: GenericSensorSample[];
-    nowMs: number;
-    sensorLog: Array<{ delta: number; timestamp: string }>;
-};
-
-type RollingAverages = {
-    accelerometerMagnitude: number;
-    gyroscopeMagnitude: number;
-    stepsPerMinute: number;
-};
-
-const getRollingAverages = ({
-    accelerometerLog,
-    gyroscopeLog,
-    nowMs,
-    sensorLog,
-}: RollingAverageInput): RollingAverages => {
-    const cutoffMs = nowMs - 60000;
-    const recentStepEvents = sensorLog.filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs);
-    const stepsPerMinute = recentStepEvents.reduce((total, entry) => total + Math.max(0, entry.delta), 0);
-
-    return {
-        accelerometerMagnitude: averageNumbers(accelerometerLog
-            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
-            .map((entry) => entry.magnitude)),
-        gyroscopeMagnitude: averageNumbers(gyroscopeLog
-            .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
-            .map((entry) => parseLeadingNumber(entry.headline))),
-        stepsPerMinute,
-    };
-};
-
-const averageNumbers = (values: number[]): number => {
-    const safeValues = values.filter(Number.isFinite);
-    if (safeValues.length === 0) {
-        return 0;
-    }
-
-    return safeValues.reduce((total, value) => total + value, 0) / safeValues.length;
-};
-
-const parseLeadingNumber = (value: string): number => {
-    const parsed = Number(value.split(' ')[0]);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-type AverageMetricProps = {
-    label: string;
-    suffix: string;
-    value: number;
-};
-
-const AverageMetric = ({ label, suffix, value }: AverageMetricProps) => (
-    <View style={styles.averageMetric}>
-        <Text style={styles.averageMetricLabel}>{label}</Text>
-        <View style={styles.averageValueRow}>
-            <AnimatedMetricNumber value={value} style={styles.averageMetricValue} />
-            <Text style={styles.averageMetricSuffix}>{suffix}</Text>
-        </View>
-    </View>
-);
-
-type AnimatedMetricNumberProps = {
-    style: TextStyle;
-    value: number;
-};
-
-const AnimatedMetricNumber = ({ style, value }: AnimatedMetricNumberProps) => {
-    const animatedValue = useRef(new Animated.Value(value)).current;
-    const [displayValue, setDisplayValue] = useState(value);
-    const bounceScale = useRef(new Animated.Value(1)).current;
-
-    useEffect(() => {
-        const listenerId = animatedValue.addListener(({ value: nextValue }) => {
-            setDisplayValue(nextValue);
-        });
-
-        return () => {
-            animatedValue.removeListener(listenerId);
-        };
-    }, [animatedValue]);
-
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(animatedValue, {
-                duration: 520,
-                toValue: value,
-                useNativeDriver: false,
-            }),
-            Animated.sequence([
-                Animated.spring(bounceScale, {
-                    friction: 5,
-                    tension: 160,
-                    toValue: 1.08,
-                    useNativeDriver: true,
-                }),
-                Animated.spring(bounceScale, {
-                    friction: 6,
-                    tension: 150,
-                    toValue: 1,
-                    useNativeDriver: true,
-                }),
-            ]),
-        ]).start();
-    }, [animatedValue, bounceScale, value]);
-
-    return (
-        <Animated.Text style={[style, { transform: [{ scale: bounceScale }] }]}>
-            {displayValue >= 100 ? Math.round(displayValue).toLocaleString() : displayValue.toFixed(2)}
-        </Animated.Text>
-    );
-};
-
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: THEME.color.appBackground,
-    },
     container: {
         paddingHorizontal: 20,
-        paddingBottom: 20,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 32,
-        marginTop: 8,
-    },
-    subtitle: {
-        color: COLORS.mutedText,
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    appName: {
-        color: COLORS.text,
-        fontSize: 28,
-        fontWeight: 'bold',
-    },
-    headerActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    iconButton: {
-        alignItems: 'center',
-        backgroundColor: COLORS.surface,
-        borderRadius: 8,
-        height: 40,
-        justifyContent: 'center',
-        width: 40,
     },
     hero: {
         alignItems: 'center',
         marginBottom: 32,
+    },
+    modeTabs: {
+        marginBottom: 18,
     },
     stepBlock: {
         alignItems: 'center',
@@ -986,7 +638,16 @@ const styles = StyleSheet.create({
     goalText: {
         color: COLORS.text,
         fontSize: 14,
+        marginBottom: 6,
+    },
+    modeHint: {
+        color: COLORS.mutedText,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
         marginBottom: 16,
+        maxWidth: 310,
+        textAlign: 'center',
     },
     goalButtons: {
         flexDirection: 'row',
@@ -1032,25 +693,11 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     refreshButton: {
-        alignItems: 'center',
-        backgroundColor: COLORS.action,
-        borderRadius: 8,
-        flexDirection: 'row',
-        gap: 8,
         height: 40,
-        justifyContent: 'center',
-        paddingHorizontal: 16,
+        minHeight: 40,
     },
     pressed: {
         opacity: 0.8,
-    },
-    refreshing: {
-        opacity: 0.9,
-    },
-    refreshButtonText: {
-        color: COLORS.surface,
-        fontSize: 14,
-        fontWeight: '600',
     },
     goalBanner: {
         alignItems: 'center',
@@ -1065,431 +712,9 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
     },
-    sensorSection: {
-        gap: 12,
-        marginBottom: 28,
-    },
-    averagePanel: {
-        backgroundColor: COLORS.challengeSoft,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 1,
-        gap: 12,
-        padding: 14,
-    },
-    averageHeader: {
+    challengeAction: {
         alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    averageTitle: {
-        color: COLORS.challenge,
-        fontSize: 15,
-        fontWeight: '900',
-    },
-    averageDescription: {
-        color: COLORS.text,
-        fontSize: 12,
-        fontWeight: '700',
-        lineHeight: 17,
-        marginTop: 2,
-    },
-    averageMeta: {
-        color: COLORS.challenge,
-        fontSize: 11,
-        fontWeight: '800',
-    },
-    averageGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    averageMetric: {
-        backgroundColor: COLORS.surface,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 1,
-        minHeight: 76,
-        paddingHorizontal: 10,
-        paddingVertical: 10,
-        width: '31%',
-    },
-    averageMetricLabel: {
-        color: COLORS.mutedText,
-        fontSize: 11,
-        fontWeight: '900',
-        marginBottom: 6,
-    },
-    averageValueRow: {
-        alignItems: 'flex-end',
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 4,
-    },
-    averageMetricValue: {
-        color: COLORS.challenge,
-        fontSize: 18,
-        fontWeight: '900',
-    },
-    averageMetricSuffix: {
-        color: COLORS.challenge,
-        fontSize: 10,
-        fontWeight: '800',
-        paddingBottom: 2,
-    },
-    sensorSummary: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    sensorSummaryItem: {
-        backgroundColor: COLORS.surface,
-        borderColor: COLORS.border,
-        borderRadius: 8,
-        borderWidth: 1,
-        flex: 1,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-    },
-    sensorSummaryLabel: {
-        color: COLORS.mutedText,
-        fontSize: 12,
-        fontWeight: '800',
-        marginBottom: 4,
-    },
-    sensorSummaryValue: {
-        color: COLORS.text,
-        fontSize: 16,
-        fontWeight: '800',
-    },
-    challengeDetailPanel: {
-        backgroundColor: COLORS.surface,
-        borderColor: COLORS.border,
-        borderRadius: 8,
-        borderWidth: 1,
-        flexDirection: 'row',
-        gap: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 14,
-    },
-    challengeDetailItem: {
-        alignItems: 'center',
-        flex: 1,
-        flexDirection: 'row',
-        gap: 10,
-    },
-    challengeDetailLabel: {
-        color: COLORS.mutedText,
-        fontSize: 12,
-        fontWeight: '800',
-    },
-    challengeDetailValue: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: '900',
-    },
-    challengeDetailValueOrange: {
-        color: COLORS.challenge,
-        fontSize: 15,
-        fontWeight: '900',
-    },
-    advancedPanel: {
-        backgroundColor: COLORS.surface,
-        borderColor: COLORS.border,
-        borderRadius: 8,
-        borderWidth: 1,
-        overflow: 'hidden',
-    },
-    advancedToggle: {
-        alignItems: 'center',
-        flexDirection: 'row',
-        gap: 12,
-        justifyContent: 'space-between',
-        minHeight: 68,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-    },
-    advancedToggleCopy: {
-        flex: 1,
-        gap: 3,
-    },
-    advancedToggleTitle: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: '900',
-    },
-    advancedToggleText: {
-        color: COLORS.mutedText,
-        fontSize: 12,
-        fontWeight: '700',
-        lineHeight: 17,
-    },
-    advancedContent: {
-        borderTopColor: COLORS.border,
-        borderTopWidth: 1,
-        gap: 12,
-        padding: 14,
-    },
-    referencePanel: {
-        backgroundColor: COLORS.challengeSoft,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 1,
-        gap: 12,
-        padding: 12,
-    },
-    referenceHeader: {
-        alignItems: 'flex-start',
-        flexDirection: 'row',
-        gap: 10,
-        justifyContent: 'space-between',
-    },
-    referenceTitle: {
-        color: COLORS.challenge,
-        fontSize: 15,
-        fontWeight: '900',
-    },
-    referenceSubtitle: {
-        color: COLORS.text,
-        fontSize: 12,
-        fontWeight: '700',
-        lineHeight: 17,
-        marginTop: 2,
-    },
-    referenceSynced: {
-        color: COLORS.challenge,
-        fontSize: 11,
-        fontWeight: '900',
-    },
-    referenceGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    referenceCard: {
-        backgroundColor: COLORS.surface,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 1,
-        minHeight: 76,
-        paddingHorizontal: 10,
-        paddingVertical: 9,
-        width: '31%',
-    },
-    referenceLabel: {
-        color: COLORS.mutedText,
-        fontSize: 11,
-        fontWeight: '900',
-        marginBottom: 5,
-    },
-    referenceValue: {
-        color: COLORS.challenge,
-        fontSize: 16,
-        fontWeight: '900',
-    },
-    referenceNote: {
-        color: COLORS.mutedText,
-        fontSize: 10,
-        fontWeight: '700',
-        lineHeight: 13,
-        marginTop: 4,
-    },
-    sensorConsole: {
-        borderTopColor: COLORS.border,
-        borderTopWidth: 1,
-        paddingTop: 18,
-    },
-    consoleHeader: {
-        alignItems: 'center',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 8,
-    },
-    consoleTitle: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: '900',
-    },
-    consoleMeta: {
-        color: COLORS.challenge,
-        fontSize: 12,
-        fontWeight: '800',
-    },
-    consoleLogBox: {
-        backgroundColor: '#08110D',
-        borderColor: '#173528',
-        borderRadius: 8,
-        borderWidth: 1,
-        minHeight: 44,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-    },
-    consoleRow: {
-        flexDirection: 'row',
-        gap: 10,
-        paddingVertical: 4,
-    },
-    consoleTime: {
-        color: '#7CE7A8',
-        fontFamily: 'monospace',
-        fontSize: 12,
-        width: 72,
-    },
-    consoleLine: {
-        color: '#D9FFE8',
-        flex: 1,
-        fontFamily: 'monospace',
-        fontSize: 12,
-    },
-    consoleEmpty: {
-        color: '#7CE7A8',
-        fontFamily: 'monospace',
-        fontSize: 12,
-    },
-    sensorExplanation: {
-        gap: 7,
-        marginBottom: 12,
-    },
-    sensorDescription: {
-        color: COLORS.text,
-        fontSize: 12,
-        fontWeight: '700',
-        lineHeight: 17,
-    },
-    sensorExplanationRow: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    sensorExplanationLabel: {
-        color: COLORS.challenge,
-        fontSize: 11,
-        fontWeight: '900',
-        minWidth: 68,
-    },
-    sensorExplanationText: {
-        color: COLORS.mutedText,
-        flex: 1,
-        fontSize: 11,
-        fontWeight: '700',
-        lineHeight: 15,
-    },
-    sensorCurrent: {
-        alignItems: 'center',
-        backgroundColor: COLORS.challengeSoft,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 1,
-        marginBottom: 10,
-        paddingVertical: 10,
-    },
-    sensorCurrentValue: {
-        color: COLORS.challenge,
-        fontFamily: 'monospace',
-        fontSize: 22,
-        fontWeight: '900',
-    },
-    sensorCurrentLabel: {
-        color: COLORS.challenge,
-        fontSize: 11,
-        fontWeight: '800',
-        marginTop: 2,
-    },
-    sensorHint: {
-        color: COLORS.mutedText,
-        fontSize: 13,
-        fontWeight: '700',
-        lineHeight: 18,
-    },
-    rewardOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        alignItems: 'center',
-        backgroundColor: 'rgba(8, 17, 13, 0.72)',
-        justifyContent: 'center',
-        paddingHorizontal: 26,
-        zIndex: 50,
-    },
-    rewardGlow: {
-        backgroundColor: COLORS.challenge,
-        borderRadius: 170,
-        height: 340,
-        opacity: 0.24,
-        position: 'absolute',
-        width: 340,
-    },
-    rewardCard: {
-        alignItems: 'center',
-        backgroundColor: COLORS.surface,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 2,
-        gap: 8,
-        maxWidth: 360,
-        paddingHorizontal: 26,
-        paddingVertical: 28,
-        shadowColor: COLORS.challenge,
-        shadowOffset: { height: 12, width: 0 },
-        shadowOpacity: 0.28,
-        shadowRadius: 22,
-        width: '100%',
-    },
-    rewardIcon: {
-        alignItems: 'center',
-        backgroundColor: COLORS.challenge,
-        borderRadius: 38,
-        height: 76,
-        justifyContent: 'center',
-        marginBottom: 4,
-        width: 76,
-    },
-    rewardEyebrow: {
-        color: COLORS.challenge,
-        fontSize: 14,
-        fontWeight: '900',
-        textTransform: 'uppercase',
-    },
-    rewardSteps: {
-        color: COLORS.challenge,
-        fontSize: 52,
-        fontWeight: '900',
-        letterSpacing: 0,
-    },
-    rewardLabel: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: '800',
-    },
-    rewardStats: {
-        flexDirection: 'row',
-        gap: 10,
-        marginTop: 8,
-        width: '100%',
-    },
-    rewardStat: {
-        alignItems: 'center',
-        backgroundColor: COLORS.challengeSoft,
-        borderColor: COLORS.challenge,
-        borderRadius: 8,
-        borderWidth: 1,
-        flex: 1,
-        paddingVertical: 10,
-    },
-    rewardStatValue: {
-        color: COLORS.challenge,
-        fontSize: 18,
-        fontWeight: '900',
-    },
-    rewardStatLabel: {
-        color: COLORS.mutedText,
-        fontSize: 11,
-        fontWeight: '900',
-        marginTop: 2,
-        textTransform: 'uppercase',
-    },
-    rewardDismiss: {
-        color: COLORS.mutedText,
-        fontSize: 12,
-        fontWeight: '900',
-        marginTop: 8,
-        textTransform: 'uppercase',
+        marginTop: 12,
     },
     challengeButton: {
         alignItems: 'center',

@@ -1,18 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
-import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { PageHeader } from '../src/components/layout/PageHeader';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { RevealView } from '../src/components/RevealView';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
-import { COLORS, DEFAULT_GOAL, THEME } from '../src/constants';
+import { AppButton } from '../src/components/ui/AppButton';
+import { MetricCard } from '../src/components/ui/MetricCard';
+import { SurfacePanel } from '../src/components/ui/SurfacePanel';
+import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { useDailyStepSync } from '../src/hooks/useDailyStepSync';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import { readGoal } from '../src/storage/stepStorage';
@@ -91,15 +93,16 @@ export default function HomeScreen() {
   const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.subtitle}>Combined Mode</Text>
-            <Text style={styles.appName}>{displayName}</Text>
-          </View>
-        </View>
+    <AppScreen
+      contentStyle={styles.container}
+      overlays={(
+        <>
+          <ToastStack messages={toastMessages} onHide={hideToast} />
+          <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
+        </>
+      )}
+    >
+        <PageHeader subtitle="Combined Mode" title={displayName} />
 
         <RevealView replayKey={stepReplayKey} style={styles.hero}>
           <ProgressRing goal={goal} resetAnimationKey={progressResetKey} steps={todaySteps} />
@@ -113,31 +116,26 @@ export default function HomeScreen() {
             {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Waiting for step data</Text>}
           </View>
 
-          <AnimatedPressable
+          <AppButton
             accessibilityLabel="Refresh Google Fit step data"
-            accessibilityRole="button"
-            disabled={isRefreshing}
+            busy={isRefreshing}
+            icon="refresh-outline"
+            label="Refresh steps"
             onPress={() => {
               void handleRefreshSteps();
             }}
-            style={({ pressed }) => [styles.refreshButton, isRefreshing ? styles.refreshing : null, pressed ? styles.pressed : null]}
-          >
-            {isRefreshing ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="refresh-outline" size={18} />}
-            <Text style={styles.refreshButtonText}>{isRefreshing ? 'Refreshing' : 'Refresh steps'}</Text>
-          </AnimatedPressable>
+          />
 
-          <AnimatedPressable
+          <AppButton
             accessibilityLabel="Save current step data to Firestore"
-            accessibilityRole="button"
-            disabled={isSavingToFirestore}
+            busy={isSavingToFirestore}
+            icon="server-outline"
+            label="Save to Firestore"
             onPress={() => {
               void handleSaveToFirestore();
             }}
-            style={({ pressed }) => [styles.saveButton, isSavingToFirestore ? styles.refreshing : null, pressed ? styles.pressed : null]}
-          >
-            {isSavingToFirestore ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="server-outline" size={18} />}
-            <Text style={styles.refreshButtonText}>{isSavingToFirestore ? 'Saving' : 'Save to Firestore'}</Text>
-          </AnimatedPressable>
+            variant="secondary"
+          />
 
           {hasReachedGoal ? (
             <View style={styles.goalBanner}>
@@ -153,7 +151,8 @@ export default function HomeScreen() {
           <StatCard label="Synced" value={formatNullableTime(lastSyncedAt)} />
         </RevealView>
 
-        <RevealView delay={140} replayKey={stepReplayKey} style={styles.syncPanel}>
+        <RevealView delay={140} replayKey={stepReplayKey}>
+        <SurfacePanel style={styles.syncPanel} tone="primary">
           <View style={styles.syncIcon}>
             <Ionicons color={COLORS.primary} name={isSystemTotalAvailable ? 'fitness-outline' : 'cloud-download-outline'} size={20} />
           </View>
@@ -161,9 +160,11 @@ export default function HomeScreen() {
             <Text style={styles.syncTitle}>{isSystemTotalAvailable ? 'Health data connected' : 'Google Fit sync'}</Text>
             <Text style={styles.syncText}>{debugMessage}</Text>
           </View>
+        </SurfacePanel>
         </RevealView>
 
-        <RevealView delay={190} replayKey={stepReplayKey} style={styles.sourcePanel}>
+        <RevealView delay={190} replayKey={stepReplayKey}>
+        <SurfacePanel>
           <View style={styles.sourceHeader}>
             <Text style={styles.sourceTitle}>Health data source</Text>
             <Text style={styles.sourceSubtitle}>Combined view uses the best available source without starting duplicate health readers.</Text>
@@ -180,12 +181,9 @@ export default function HomeScreen() {
               {debugMessage}
             </Text>
           </View>
+        </SurfacePanel>
         </RevealView>
-
-      </ScrollView>
-      <ToastStack messages={toastMessages} onHide={hideToast} />
-      <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
@@ -195,10 +193,9 @@ type StatCardProps = {
 };
 
 const StatCard = ({ label, value }: StatCardProps) => (
-  <View style={styles.statCard}>
-    <Text style={styles.statLabel}>{label}</Text>
+  <MetricCard label={label} style={styles.statCard} value={value}>
     <FormattedStatValue value={value} />
-  </View>
+  </MetricCard>
 );
 
 type FormattedStatValueProps = {
@@ -222,31 +219,8 @@ const FormattedStatValue = ({ value }: FormattedStatValueProps) => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: THEME.color.appBackground,
-  },
   container: {
-    paddingHorizontal: THEME.spacing.screenHorizontal,
-    paddingTop: 18,
-    paddingBottom: 28,
     gap: 18,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  appName: {
-    color: COLORS.text,
-    fontSize: 30,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginBottom: 4,
-    color: COLORS.mutedText,
-    fontSize: 14,
-    fontWeight: '700',
   },
   hero: {
     alignItems: 'center',
@@ -281,31 +255,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
-  refreshButton: {
-    minHeight: 48,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: COLORS.action,
-  },
-  saveButton: {
-    minHeight: 48,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    backgroundColor: COLORS.stopped,
-  },
-  refreshButtonText: {
-    color: COLORS.surface,
-    fontSize: 15,
-    fontWeight: '900',
-  },
   goalBanner: {
     width: '100%',
     borderRadius: 8,
@@ -327,19 +276,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   statCard: {
-    width: '48%',
     minHeight: 82,
-    borderRadius: 8,
-    padding: 14,
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  statLabel: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '800',
   },
   statValue: {
     color: COLORS.text,
@@ -357,13 +294,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   syncPanel: {
-    borderRadius: 8,
-    padding: 14,
     flexDirection: 'row',
     gap: 12,
-    backgroundColor: COLORS.primarySoft,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
   },
   syncIcon: {
     width: 36,
@@ -387,14 +319,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
-  },
-  sourcePanel: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 14,
-    padding: 14,
   },
   sourceHeader: {
     gap: 3,
@@ -429,11 +353,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
-  },
-  refreshing: {
-    opacity: 0.9,
-  },
-  pressed: {
-    opacity: 0.84,
   },
 });

@@ -1,14 +1,16 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { PageHeader } from '../src/components/layout/PageHeader';
 import { RevealView } from '../src/components/RevealView';
+import { SegmentedTabs } from '../src/components/SegmentedTabs';
 import { StepTrendChart } from '../src/components/StepTrendChart';
+import { AppButton } from '../src/components/ui/AppButton';
+import { MetricCard } from '../src/components/ui/MetricCard';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import {
   readChallengeSessionSumsFromFirestore,
@@ -201,64 +203,53 @@ export default function HistoryScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>Statistics</Text>
-            <Text style={styles.subtitle}>{`Last 7 days · ${dataSourceLabel}`}</Text>
-          </View>
-          <AnimatedPressable
+    <AppScreen
+      contentStyle={styles.container}
+      overlays={(
+        <StorageDetailModal
+          detail={selectedStorageDetail}
+          onClose={() => setSelectedStorageDetail(null)}
+        />
+      )}
+    >
+        <PageHeader
+          accessory={(
+          <AppButton
             accessibilityLabel="Sync missing Health Connect days"
-            accessibilityRole="button"
-            disabled={isSyncingHistory}
+            busy={isSyncingHistory}
+            icon="sync-outline"
+            label="Sync"
             onPress={() => {
               void handleSyncHistory();
             }}
             style={styles.syncButton}
-          >
-            {isSyncingHistory ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="sync-outline" size={18} />}
-            <Text style={styles.syncButtonText}>{isSyncingHistory ? 'Syncing' : 'Sync'}</Text>
-          </AnimatedPressable>
-        </View>
+            variant="warning"
+          />
+          )}
+          subtitle={`Last 7 days · ${dataSourceLabel}`}
+          title="Statistics"
+        />
         {syncMessage === null ? null : <Text style={styles.syncMessage}>{syncMessage}</Text>}
 
-        <View style={styles.segmentedControl}>
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={() => setHistoryView('totals')}
-            style={[styles.segmentButton, historyView === 'totals' ? styles.segmentButtonActiveOrange : null]}
-          >
-            <Text style={[styles.segmentText, historyView === 'totals' ? styles.segmentTextActive : null]}>Totals</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={() => setHistoryView('sessions')}
-            style={[styles.segmentButton, historyView === 'sessions' ? styles.segmentButtonActiveOrange : null]}
-          >
-            <Text style={[styles.segmentText, historyView === 'sessions' ? styles.segmentTextActive : null]}>Sessions</Text>
-          </AnimatedPressable>
-        </View>
+        <SegmentedTabs
+          onChange={setHistoryView}
+          options={[
+            { icon: 'analytics-outline', label: 'Totals', value: 'totals' },
+            { icon: 'walk-outline', label: 'Sessions', value: 'sessions' },
+          ]}
+          value={historyView}
+        />
 
         {historyView === 'totals' ? (
           <>
-        <View style={styles.metricTabs}>
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={() => setGraphMode('steps')}
-            style={[styles.metricTab, graphMode === 'steps' ? styles.metricTabActive : null]}
-          >
-            <Text style={[styles.metricTabText, graphMode === 'steps' ? styles.metricTabTextActive : null]}>Steps</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            accessibilityRole="button"
-            onPress={() => setGraphMode('pace')}
-            style={[styles.metricTab, graphMode === 'pace' ? styles.metricTabActive : null]}
-          >
-            <Text style={[styles.metricTabText, graphMode === 'pace' ? styles.metricTabTextActive : null]}>Pace</Text>
-          </AnimatedPressable>
-        </View>
+        <SegmentedTabs
+          onChange={setGraphMode}
+          options={[
+            { icon: 'footsteps-outline', label: 'Steps', value: 'steps' },
+            { icon: 'speedometer-outline', label: 'Pace', value: 'pace' },
+          ]}
+          value={graphMode}
+        />
 
         <RevealView replayKey={graphReplayKey} style={styles.chartSurface}>
           <StepTrendChart
@@ -450,12 +441,7 @@ export default function HistoryScreen() {
             </RevealView>
           </>
         )}
-      </ScrollView>
-      <StorageDetailModal
-        detail={selectedStorageDetail}
-        onClose={() => setSelectedStorageDetail(null)}
-      />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
@@ -490,18 +476,6 @@ type SessionStorageCopies = {
   firestore: boolean;
   local: boolean;
 };
-
-type MetricCardProps = {
-  label: string;
-  value: string;
-};
-
-const MetricCard = ({ label, value }: MetricCardProps) => (
-  <View style={styles.metricCard}>
-    <Text style={styles.metricLabel}>{label}</Text>
-    <Text style={styles.metricValue}>{value}</Text>
-  </View>
-);
 
 type StorageDetailModalProps = {
   detail: StorageDetail | null;
@@ -716,49 +690,12 @@ const formatFullDateTime = (timestamp: string): string => new Date(timestamp).to
 });
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   container: {
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 28,
     gap: 18,
   },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  headerCopy: {
-    flex: 1,
-    gap: 4,
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: 30,
-    fontWeight: '900',
-  },
-  subtitle: {
-    color: COLORS.mutedText,
-    fontSize: 14,
-    fontWeight: '800',
-  },
   syncButton: {
-    alignItems: 'center',
-    backgroundColor: COLORS.challenge,
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 7,
     minHeight: 42,
     paddingHorizontal: 12,
-  },
-  syncButtonText: {
-    color: COLORS.surface,
-    fontSize: 13,
-    fontWeight: '900',
   },
   syncMessage: {
     color: COLORS.challenge,
@@ -775,90 +712,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  segmentedControl: {
-    backgroundColor: COLORS.challengeSoft,
-    borderColor: COLORS.challenge,
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    padding: 5,
-  },
-  segmentButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flex: 1,
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  segmentButtonActiveOrange: {
-    backgroundColor: COLORS.challenge,
-  },
-  segmentText: {
-    color: COLORS.challenge,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  segmentTextActive: {
-    color: COLORS.surface,
-  },
-  metricTabs: {
-    alignSelf: 'stretch',
-    backgroundColor: COLORS.surface,
-    borderBottomColor: COLORS.challenge,
-    borderBottomWidth: 2,
-    flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 4,
-    paddingTop: 4,
-  },
-  metricTab: {
-    alignItems: 'center',
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    flex: 1,
-    minHeight: 46,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
-  metricTabActive: {
-    backgroundColor: COLORS.challenge,
-  },
-  metricTabText: {
-    color: COLORS.challenge,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  metricTabTextActive: {
-    color: COLORS.surface,
-  },
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-  },
-  metricCard: {
-    width: '48%',
-    minHeight: 86,
-    borderRadius: 8,
-    padding: 14,
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  metricLabel: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  metricValue: {
-    color: COLORS.text,
-    fontSize: 22,
-    fontWeight: '900',
   },
   insight: {
     borderRadius: 8,
@@ -953,7 +810,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(11, 18, 14, 0.58)',
+    backgroundColor: COLORS.overlaySoft,
   },
   modalCard: {
     backgroundColor: COLORS.surface,

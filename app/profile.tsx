@@ -1,16 +1,20 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { GoalModal } from '../src/components/GoalModal';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { PageHeader } from '../src/components/layout/PageHeader';
 import { ProfileModal } from '../src/components/ProfileModal';
+import { ProfileSharingPanel } from '../src/components/profile/ProfileSharingPanel';
 import { RevealView } from '../src/components/RevealView';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
+import { AppButton } from '../src/components/ui/AppButton';
+import { MetricCard } from '../src/components/ui/MetricCard';
+import { SurfacePanel } from '../src/components/ui/SurfacePanel';
 import { WeightTrendChart } from '../src/components/WeightTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import {
@@ -236,14 +240,32 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.subtitle}>Account</Text>
-            <Text style={styles.title}>{displayName}</Text>
-          </View>
+    <AppScreen
+      contentStyle={styles.container}
+      overlays={(
+        <>
+          <GoalModal
+            currentGoal={goal}
+            isVisible={isGoalModalVisible}
+            onClose={() => setIsGoalModalVisible(false)}
+            onSave={(nextGoal) => {
+              void handleSaveGoal(nextGoal);
+            }}
+          />
+          <ProfileModal
+            isVisible={isProfileModalVisible}
+            onClose={() => setIsProfileModalVisible(false)}
+            onSave={(nextProfile) => {
+              void handleSaveProfile(nextProfile);
+            }}
+            profile={bodyProfile}
+          />
+          <ToastStack messages={toastMessages} onHide={hideToast} placement="center" />
+        </>
+      )}
+    >
+        <PageHeader
+          accessory={(
           <AnimatedPressable
             accessibilityLabel="Sign out"
             accessibilityRole="button"
@@ -255,133 +277,60 @@ export default function ProfileScreen() {
             <Ionicons color={COLORS.surface} name="log-out-outline" size={18} />
             <Text style={styles.logoutText}>Logout</Text>
           </AnimatedPressable>
-        </View>
+          )}
+          subtitle="Account"
+          title={displayName}
+        />
 
         <RevealView replayKey={graphReplayKey} style={styles.metricGrid}>
-          <MetricCard label="Daily goal" value={goal.toLocaleString()} />
-          <MetricCard label="Height" value={bodyProfile?.heightCm ? `${bodyProfile.heightCm.toLocaleString()} cm` : '-'} />
-          <MetricCard label="Weight" value={latestWeight > 0 ? `${latestWeight.toLocaleString()} kg` : '-'} />
-          <MetricCard label="BMI" value={bmi > 0 ? bmi.toFixed(1) : '-'} />
+          <MetricCard label="Daily goal" style={styles.metricCard} value={goal.toLocaleString()} />
+          <MetricCard label="Height" style={styles.metricCard} value={bodyProfile?.heightCm ? `${bodyProfile.heightCm.toLocaleString()} cm` : '-'} />
+          <MetricCard label="Weight" style={styles.metricCard} value={latestWeight > 0 ? `${latestWeight.toLocaleString()} kg` : '-'} />
+          <MetricCard label="BMI" style={styles.metricCard} value={bmi > 0 ? bmi.toFixed(1) : '-'} />
         </RevealView>
 
-        <RevealView delay={80} replayKey={graphReplayKey} style={styles.actionPanel}>
-          <AnimatedPressable
+        <RevealView delay={80} replayKey={graphReplayKey}>
+        <SurfacePanel style={styles.actionPanel}>
+          <AppButton
             accessibilityLabel="Edit profile"
-            accessibilityRole="button"
+            icon="person-circle-outline"
+            label="Edit profile"
             onPress={() => setIsProfileModalVisible(true)}
-            style={styles.actionButton}
-          >
-            <Ionicons color={COLORS.surface} name="person-circle-outline" size={19} />
-            <Text style={styles.actionButtonText}>Edit profile</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
+          />
+          <AppButton
             accessibilityLabel="Edit daily goal"
-            accessibilityRole="button"
+            icon="flag-outline"
+            label="Daily step goal"
             onPress={() => setIsGoalModalVisible(true)}
-            style={styles.secondaryActionButton}
-          >
-            <Ionicons color={COLORS.action} name="flag-outline" size={19} />
-            <Text style={styles.secondaryActionText}>Daily step goal</Text>
-          </AnimatedPressable>
+            variant="secondary"
+          />
+        </SurfacePanel>
         </RevealView>
 
         <RevealView delay={140} replayKey={graphReplayKey}>
           <WeightTrendChart animationKey={graphReplayKey} entries={weightEntries} profile={bodyProfile} />
         </RevealView>
 
-        <RevealView delay={190} replayKey={graphReplayKey} style={styles.sharePanel}>
-          <View style={styles.shareHeader}>
-            <View>
-              <Text style={styles.shareTitle}>Challenge sharing</Text>
-              <Text style={styles.shareText}>Share a read-only code or import another user for comparison.</Text>
-            </View>
-            <Ionicons color={COLORS.challenge} name="people-outline" size={22} />
-          </View>
-
-          {shareCode === null ? null : (
-            <View style={styles.codeBox}>
-              <Text style={styles.codeLabel}>Your share code</Text>
-              <Text style={styles.codeValue}>{shareCode}</Text>
-            </View>
-          )}
-
-          <AnimatedPressable
-            accessibilityLabel="Create or refresh share code"
-            accessibilityRole="button"
-            disabled={isSharing}
-            onPress={() => {
+        <RevealView delay={190} replayKey={graphReplayKey}>
+          <ProfileSharingPanel
+            importCode={importCode}
+            importSpin={importSpin}
+            isImporting={isImporting}
+            isSharing={isSharing}
+            onImport={() => {
+              void handleImportShareCode();
+            }}
+            onImportCodeChange={(value) => setImportCode(sanitizeShareCode(value))}
+            onPublish={() => {
               void handlePublishShareCode();
             }}
-            style={styles.shareButton}
-          >
-            <Animated.View style={{ transform: [{ rotate: shareSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-              <Ionicons color={COLORS.surface} name={isSharing ? 'sync-outline' : 'share-social-outline'} size={18} />
-            </Animated.View>
-            <Text style={styles.shareButtonText}>{isSharing ? 'Publishing...' : shareCode === null ? 'Create share code' : 'Refresh shared data'}</Text>
-          </AnimatedPressable>
-
-          <View style={styles.importGroup}>
-            <Text style={styles.importLabel}>Import someone else</Text>
-            <TextInput
-              autoCapitalize="characters"
-              autoCorrect={false}
-              onChangeText={(value) => setImportCode(sanitizeShareCode(value))}
-              placeholder="Import code"
-              placeholderTextColor={COLORS.mutedText}
-              style={styles.importInput}
-              textAlign="center"
-              value={importCode}
-            />
-            <AnimatedPressable
-              accessibilityLabel="Import share code"
-              accessibilityRole="button"
-              disabled={isImporting}
-              onPress={() => {
-                void handleImportShareCode();
-              }}
-              style={styles.importButton}
-            >
-              <Animated.View style={{ transform: [{ rotate: importSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-                <Ionicons color={COLORS.surface} name={isImporting ? 'sync-outline' : 'download-outline'} size={18} />
-              </Animated.View>
-              <Text style={styles.importButtonText}>{isImporting ? 'Importing...' : 'Import'}</Text>
-            </AnimatedPressable>
-          </View>
+            shareCode={shareCode}
+            shareSpin={shareSpin}
+          />
         </RevealView>
-      </ScrollView>
-
-      <GoalModal
-        currentGoal={goal}
-        isVisible={isGoalModalVisible}
-        onClose={() => setIsGoalModalVisible(false)}
-        onSave={(nextGoal) => {
-          void handleSaveGoal(nextGoal);
-        }}
-      />
-      <ProfileModal
-        isVisible={isProfileModalVisible}
-        onClose={() => setIsProfileModalVisible(false)}
-        onSave={(nextProfile) => {
-          void handleSaveProfile(nextProfile);
-        }}
-        profile={bodyProfile}
-      />
-      <ToastStack messages={toastMessages} onHide={hideToast} placement="center" />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
-
-type MetricCardProps = {
-  label: string;
-  value: string;
-};
-
-const MetricCard = ({ label, value }: MetricCardProps) => (
-  <View style={styles.metricCard}>
-    <Text style={styles.metricLabel}>{label}</Text>
-    <Text style={styles.metricValue}>{value}</Text>
-  </View>
-);
 
 const mergeWeightEntries = (localEntries: WeightEntry[], remoteEntries: WeightEntry[]): WeightEntry[] => {
   const entriesById = new Map<string, WeightEntry>();
@@ -407,32 +356,8 @@ const getNewestProfile = (localProfile: UserBodyProfile | null, remoteProfile: U
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   container: {
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 28,
     gap: 18,
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 14,
-  },
-  subtitle: {
-    color: COLORS.mutedText,
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: 30,
-    fontWeight: '900',
   },
   logoutButton: {
     alignItems: 'center',
@@ -454,168 +379,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metricCard: {
-    width: '48%',
     minHeight: 86,
-    borderRadius: 8,
-    padding: 14,
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  metricLabel: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  metricValue: {
-    color: COLORS.text,
-    fontSize: 21,
-    fontWeight: '900',
   },
   actionPanel: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
     gap: 10,
-    padding: 14,
-  },
-  actionButton: {
-    alignItems: 'center',
-    backgroundColor: COLORS.action,
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minHeight: 50,
-    paddingHorizontal: 16,
-  },
-  actionButtonText: {
-    color: COLORS.surface,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  secondaryActionButton: {
-    alignItems: 'center',
-    backgroundColor: COLORS.primarySoft,
-    borderColor: COLORS.primary,
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minHeight: 50,
-    paddingHorizontal: 16,
-  },
-  secondaryActionText: {
-    color: COLORS.action,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  sharePanel: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 12,
-    padding: 14,
-  },
-  shareHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-  },
-  shareTitle: {
-    color: COLORS.text,
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  shareText: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 17,
-    marginTop: 3,
-  },
-  codeBox: {
-    backgroundColor: COLORS.challengeSoft,
-    borderColor: COLORS.challenge,
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  codeLabel: {
-    color: COLORS.challenge,
-    fontSize: 11,
-    fontWeight: '900',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-  },
-  codeValue: {
-    color: COLORS.challenge,
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  shareButton: {
-    alignItems: 'center',
-    backgroundColor: COLORS.challenge,
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: 14,
-  },
-  shareButtonText: {
-    color: COLORS.surface,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  importGroup: {
-    backgroundColor: COLORS.background,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 8,
-    padding: 10,
-  },
-  importLabel: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  importInput: {
-    includeFontPadding: false,
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    color: COLORS.text,
-    fontSize: 22,
-    fontWeight: '900',
-    height: 64,
-    lineHeight: 28,
-    paddingHorizontal: 12,
-    paddingVertical: 16,
-    textAlignVertical: 'center',
-  },
-  importButton: {
-    alignItems: 'center',
-    backgroundColor: COLORS.action,
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    minHeight: 50,
-    paddingHorizontal: 16,
-  },
-  importButtonText: {
-    color: COLORS.surface,
-    fontSize: 15,
-    fontWeight: '900',
   },
 });

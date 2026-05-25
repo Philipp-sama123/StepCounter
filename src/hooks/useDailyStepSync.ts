@@ -35,9 +35,9 @@ export const useDailyStepSync = ({ goal, onMessage, source, steps, userId }: Dai
 
   const syncSnapshot = useCallback(async (
     snapshot: DailySyncSnapshot,
-    options: { notify: boolean; showNoChanges?: boolean } = { notify: false },
+    options: { backfillDays?: number; notify: boolean; showNoChanges?: boolean } = { notify: false },
   ): Promise<void> => {
-    const result = await syncSnapshotAndBackfill(snapshot);
+    const result = await syncSnapshotAndBackfill(snapshot, { backfillDays: options.backfillDays, skipUnchanged: true });
     if (options.notify && (result.changed || options.showNoChanges || !result.ok)) {
       onMessage(result.message, result.ok ? 'standard' : 'error');
     }
@@ -46,7 +46,7 @@ export const useDailyStepSync = ({ goal, onMessage, source, steps, userId }: Dai
   const syncNow = useCallback(async (): Promise<void> => {
     setIsSyncing(true);
     try {
-      await syncSnapshot(latestSyncSnapshotRef.current, { notify: true, showNoChanges: true });
+      await syncSnapshot(latestSyncSnapshotRef.current, { backfillDays: 1, notify: true, showNoChanges: true });
     } finally {
       setIsSyncing(false);
     }

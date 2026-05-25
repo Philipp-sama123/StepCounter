@@ -44,7 +44,7 @@ const getStartOfToday = (): Date => {
   return today;
 };
 
-export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCounterResult => {
+export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = true): UseStepCounterResult => {
   const [todaySteps, setTodaySteps] = useState(0);
   const [debugMessage, setDebugMessage] = useState('Loading local step data...');
   const [isAvailable, setIsAvailable] = useState(false);
@@ -61,6 +61,23 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
   const previousSensorStepsRef = useRef<number | null>(null);
   const canQueryRangesRef = useRef(Platform.OS !== 'android');
   const stoppedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCachedSteps = async (): Promise<void> => {
+      const cachedSteps = await readStepsForDate(getTodayString());
+      if (isMounted) {
+        updateTodaySteps(cachedSteps);
+      }
+    };
+
+    void loadCachedSteps();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const updateTodaySteps = (steps: number): void => {
     const safeSteps = Math.max(0, Math.floor(steps));
@@ -191,8 +208,22 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
     let isMounted = true;
     let subscription: Pedometer.Subscription | null = null;
 
+    if (!enabled) {
+      setIsRefreshing(false);
+      setStatus('unknown');
+      return () => {
+        isMounted = false;
+      };
+    }
+
     const startPedometer = async (): Promise<void> => {
       try {
+        setSensorLog([]);
+        setStatus('unknown');
+        setIsRefreshing(false);
+        previousSensorStepsRef.current = null;
+        isSystemHealthActiveRef.current = false;
+
         if (mode === 'system') {
           // Only system health
           const hasSystemHealthSteps = (await syncSystemHealthSteps()) !== null;
@@ -291,7 +322,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined'): UseStepCoun
         clearTimeout(stoppedTimerRef.current);
       }
     };
-  }, []);
+  }, [enabled, mode]);
 
   const isSystemTotalAvailable =
     mode === 'system'

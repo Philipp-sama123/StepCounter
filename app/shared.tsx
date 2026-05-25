@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { PageHeader } from '../src/components/layout/PageHeader';
 import { RevealView } from '../src/components/RevealView';
+import { SegmentedTabs } from '../src/components/SegmentedTabs';
+import { MetricCard } from '../src/components/ui/MetricCard';
 import { COLORS } from '../src/constants';
 import { useAuth } from '../src/auth/AuthContext';
 import { publishSharedProfile, readSharedProfile, SharedProfileData } from '../src/firebase/shareSync';
@@ -152,14 +154,9 @@ export default function SharedHistoryScreen() {
     null,
   );
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.subtitle}>Shared challenge</Text>
-            <Text style={styles.title}>{sharedProfile?.displayName ?? 'Imported user'}</Text>
-          </View>
+    <AppScreen contentStyle={styles.container}>
+        <PageHeader
+          accessory={(
           <AnimatedPressable
             accessibilityLabel="Refresh shared history"
             accessibilityRole="button"
@@ -173,7 +170,10 @@ export default function SharedHistoryScreen() {
               <Ionicons color={COLORS.surface} name={isLoading ? 'sync-outline' : 'refresh-outline'} size={20} />
             </Animated.View>
           </AnimatedPressable>
-        </View>
+          )}
+          subtitle="Shared challenge"
+          title={sharedProfile?.displayName ?? 'Imported user'}
+        />
 
         {shareCode === null ? (
           <View style={styles.emptyState}>
@@ -240,10 +240,10 @@ export default function SharedHistoryScreen() {
             </RevealView>
 
             <RevealView delay={70} style={styles.metricGrid}>
-              <MetricCard label={graphMode === 'steps' ? 'Your steps' : 'Your challenge'} value={currentTotal.toLocaleString()} />
-              <MetricCard label={graphMode === 'steps' ? 'Their steps' : 'Their challenge'} value={importedTotal.toLocaleString()} />
-              <MetricCard label="Difference" value={formatSignedNumber(totalDifference)} valueColor={totalDifference >= 0 ? COLORS.action : COLORS.challenge} />
-              <MetricCard label={graphMode === 'steps' ? 'Their best day' : 'Their best session'} value={(graphMode === 'steps' ? bestDay?.steps : bestSession?.steps)?.toLocaleString() ?? '0'} />
+              <ComparisonMetricCard label={graphMode === 'steps' ? 'Your steps' : 'Your challenge'} value={currentTotal.toLocaleString()} />
+              <ComparisonMetricCard label={graphMode === 'steps' ? 'Their steps' : 'Their challenge'} value={importedTotal.toLocaleString()} />
+              <ComparisonMetricCard label="Difference" value={formatSignedNumber(totalDifference)} valueColor={totalDifference >= 0 ? COLORS.action : COLORS.challenge} />
+              <ComparisonMetricCard label={graphMode === 'steps' ? 'Their best day' : 'Their best session'} value={(graphMode === 'steps' ? bestDay?.steps : bestSession?.steps)?.toLocaleString() ?? '0'} />
             </RevealView>
 
             <RevealView delay={120} style={styles.chartPanel}>
@@ -251,24 +251,14 @@ export default function SharedHistoryScreen() {
                 <Text style={styles.sectionTitle}>You vs imported user</Text>
                 <Text style={styles.sectionMeta}>{graphMode === 'steps' ? 'daily steps' : 'challenges'}</Text>
               </View>
-              <View style={styles.segmentedControl}>
-                <AnimatedPressable
-                  accessibilityLabel="Compare daily steps"
-                  accessibilityRole="button"
-                  onPress={() => setGraphMode('steps')}
-                  style={[styles.segmentButton, graphMode === 'steps' && styles.segmentButtonActive]}
-                >
-                  <Text style={[styles.segmentText, graphMode === 'steps' && styles.segmentTextActive]}>Steps</Text>
-                </AnimatedPressable>
-                <AnimatedPressable
-                  accessibilityLabel="Compare challenges"
-                  accessibilityRole="button"
-                  onPress={() => setGraphMode('challenges')}
-                  style={[styles.segmentButton, graphMode === 'challenges' && styles.segmentButtonActive]}
-                >
-                  <Text style={[styles.segmentText, graphMode === 'challenges' && styles.segmentTextActive]}>Challenges</Text>
-                </AnimatedPressable>
-              </View>
+              <SegmentedTabs
+                onChange={setGraphMode}
+                options={[
+                  { icon: 'footsteps-outline', label: 'Steps', value: 'steps' },
+                  { icon: 'trophy-outline', label: 'Challenges', value: 'challenges' },
+                ]}
+                value={graphMode}
+              />
               <View style={styles.legendRow}>
                 <LegendItem color={COLORS.action} label="You" />
                 <LegendItem color={COLORS.challenge} label={sharedProfile.displayName} />
@@ -300,16 +290,12 @@ export default function SharedHistoryScreen() {
             </RevealView>
           </>
         ) : null}
-      </ScrollView>
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
-const MetricCard = ({ label, value, valueColor = COLORS.text }: { label: string; value: string; valueColor?: string }) => (
-  <View style={styles.metricCard}>
-    <Text style={styles.metricLabel}>{label}</Text>
-    <Text style={[styles.metricValue, { color: valueColor }]}>{value}</Text>
-  </View>
+const ComparisonMetricCard = ({ label, value, valueColor = COLORS.text }: { label: string; value: string; valueColor?: string }) => (
+  <MetricCard label={label} value={value} valueStyle={{ color: valueColor }} />
 );
 
 const refreshOwnSharedProfileSnapshot = async ({
@@ -706,30 +692,8 @@ const getPace = (session: { durationMs: number; steps: number }): number => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   container: {
     gap: 16,
-    paddingBottom: 28,
-    paddingHorizontal: 24,
-    paddingTop: 18,
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  subtitle: {
-    color: COLORS.mutedText,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: 30,
-    fontWeight: '900',
   },
   iconButton: {
     alignItems: 'center',
@@ -826,26 +790,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
   },
-  metricCard: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: 'space-between',
-    minHeight: 86,
-    padding: 14,
-    width: '48%',
-  },
-  metricLabel: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  metricValue: {
-    color: COLORS.text,
-    fontSize: 22,
-    fontWeight: '900',
-  },
   chartPanel: {
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
@@ -889,33 +833,6 @@ const styles = StyleSheet.create({
     color: COLORS.mutedText,
     fontSize: 12,
     fontWeight: '800',
-  },
-  segmentedControl: {
-    backgroundColor: COLORS.background,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    padding: 4,
-  },
-  segmentButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  segmentButtonActive: {
-    backgroundColor: COLORS.challenge,
-  },
-  segmentText: {
-    color: COLORS.mutedText,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  segmentTextActive: {
-    color: COLORS.surface,
   },
   trendCanvas: {
     minHeight: 192,

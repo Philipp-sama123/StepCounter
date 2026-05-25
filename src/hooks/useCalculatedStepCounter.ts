@@ -58,7 +58,7 @@ const SEQUENCE_RESET_INTERVAL_MS = 2200;
 const WARMUP_SAMPLE_COUNT = 8;
 const HISTORY_DAYS = 14;
 
-export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
+export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCounterResult => {
   const [steps, setSteps] = useState(0);
   const [history, setHistory] = useState<StepHistoryEntry[]>([]);
   const [isAvailable, setIsAvailable] = useState(false);
@@ -91,6 +91,12 @@ export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
     let isMounted = true;
     let accelerometerSubscription: ReturnType<typeof Accelerometer.addListener> | null = null;
     let gyroscopeSubscription: ReturnType<typeof Gyroscope.addListener> | null = null;
+
+    if (!enabled) {
+      return () => {
+        isMounted = false;
+      };
+    }
 
     const loadInitialState = async (): Promise<void> => {
       const [storedSteps, storedHistory, profile] = await Promise.all([
@@ -243,7 +249,7 @@ export const useCalculatedStepCounter = (): UseCalculatedStepCounterResult => {
       accelerometerSubscription?.remove();
       gyroscopeSubscription?.remove();
     };
-  }, []);
+  }, [enabled]);
 
   return {
     cadenceStepsPerMinute,

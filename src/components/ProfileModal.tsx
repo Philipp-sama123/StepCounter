@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
-    backgroundColor: 'rgba(23, 33, 27, 0.36)',
+    backgroundColor: COLORS.modalBackdrop,
   },
   dialog: {
     borderRadius: 8,

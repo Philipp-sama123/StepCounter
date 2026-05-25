@@ -1,11 +1,12 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { PageHeader } from '../src/components/layout/PageHeader';
+import { MetricCard } from '../src/components/ui/MetricCard';
 import { COLORS } from '../src/constants';
 import { readChallengeSessionsFromFirestore, StoredChallengeSession } from '../src/firebase/stepsSync';
 import { readRecentChallengeSessions } from '../src/storage/stepStorage';
@@ -48,13 +49,8 @@ export default function ChallengeHistoryScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Challenge Sessions</Text>
-          <Text style={styles.subtitle}>{sourceLabel}</Text>
-        </View>
+    <AppScreen contentStyle={styles.container}>
+        <PageHeader subtitle={sourceLabel} title="Challenge Sessions" />
 
         <View style={styles.metricGrid}>
           <MetricCard label="Sessions" value={sessions.length.toLocaleString()} />
@@ -135,22 +131,9 @@ export default function ChallengeHistoryScreen() {
             ))
           )}
         </View>
-      </ScrollView>
-    </SafeAreaView>
+    </AppScreen>
   );
 }
-
-type MetricCardProps = {
-  label: string;
-  value: string;
-};
-
-const MetricCard = ({ label, value }: MetricCardProps) => (
-  <View style={styles.metricCard}>
-    <Text style={styles.metricLabel}>{label}</Text>
-    <Text style={styles.metricValue}>{value}</Text>
-  </View>
-);
 
 const mergeSessions = (
   remoteSessions: StoredChallengeSession[],
@@ -190,53 +173,13 @@ const formatSessionTime = (timestamp: string): string => new Date(timestamp).toL
 });
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   container: {
-    paddingHorizontal: 24,
-    paddingTop: 18,
-    paddingBottom: 28,
     gap: 18,
-  },
-  header: {
-    gap: 4,
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: 30,
-    fontWeight: '900',
-  },
-  subtitle: {
-    color: COLORS.mutedText,
-    fontSize: 14,
-    fontWeight: '800',
   },
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-  },
-  metricCard: {
-    width: '48%',
-    minHeight: 86,
-    borderRadius: 8,
-    padding: 14,
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  metricLabel: {
-    color: COLORS.mutedText,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  metricValue: {
-    color: COLORS.text,
-    fontSize: 22,
-    fontWeight: '900',
   },
   timelinePanel: {
     backgroundColor: COLORS.surface,

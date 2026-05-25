@@ -1,15 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { Accelerometer, DeviceMotion, Gyroscope, Magnetometer } from 'expo-sensors';
 import { useFocusEffect } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { SyncDiagnosticRow } from '../src/components/debug/SyncDiagnosticRow';
+import { AppScreen } from '../src/components/layout/AppScreen';
+import { PageHeader } from '../src/components/layout/PageHeader';
 import { RevealView } from '../src/components/RevealView';
+import { SegmentedTabs } from '../src/components/SegmentedTabs';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
@@ -38,10 +40,11 @@ type StepReferenceState = {
 type DebugView = 'calculated' | 'sensors' | 'sync';
 
 export default function DebugScreen() {
-  const { debugMessage, sensorLog, source, todaySteps } = useStepCounter('live');
+  const isFocused = useIsFocused();
+  const { debugMessage, sensorLog, source, todaySteps } = useStepCounter('live', isFocused);
   const { user } = useAuth();
-  const calculatedSteps = useCalculatedStepCounter();
   const [debugView, setDebugView] = useState<DebugView>('calculated');
+  const calculatedSteps = useCalculatedStepCounter(isFocused && debugView === 'calculated');
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
@@ -131,6 +134,12 @@ export default function DebugScreen() {
     let deviceMotionSubscription: ReturnType<typeof DeviceMotion.addListener> | null = null;
     let magnetometerSubscription: ReturnType<typeof Magnetometer.addListener> | null = null;
 
+    if (!isFocused || debugView !== 'sensors') {
+      return () => {
+        isMounted = false;
+      };
+    }
+
     const startSensors = async (): Promise<void> => {
       const [hasAccelerometer, hasGyroscope, hasDeviceMotion, hasMagnetometer] = await Promise.all([
         Accelerometer.isAvailableAsync(),
@@ -211,46 +220,28 @@ export default function DebugScreen() {
       deviceMotionSubscription?.remove();
       magnetometerSubscription?.remove();
     };
-  }, []);
+  }, [debugView, isFocused]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.subtitle}>Debugging</Text>
-            <Text style={styles.title}>{getDebugTitle(debugView)}</Text>
-          </View>
-          <Ionicons color={COLORS.challenge} name="bug-outline" size={28} />
-        </View>
+    <AppScreen
+      contentStyle={styles.container}
+      overlays={<ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />}
+    >
+        <PageHeader
+          accessory={<Ionicons color={COLORS.challenge} name="bug-outline" size={28} />}
+          subtitle="Debugging"
+          title={getDebugTitle(debugView)}
+        />
 
-        <View style={styles.segmentedControl}>
-          <AnimatedPressable
-            accessibilityLabel="Show calculated step debug"
-            accessibilityRole="button"
-            onPress={() => setDebugView('calculated')}
-            style={[styles.segmentButton, debugView === 'calculated' ? styles.segmentButtonActive : null]}
-          >
-            <Text style={[styles.segmentText, debugView === 'calculated' ? styles.segmentTextActive : null]}>Calculated</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            accessibilityLabel="Show raw sensor debug"
-            accessibilityRole="button"
-            onPress={() => setDebugView('sensors')}
-            style={[styles.segmentButton, debugView === 'sensors' ? styles.segmentButtonActive : null]}
-          >
-            <Text style={[styles.segmentText, debugView === 'sensors' ? styles.segmentTextActive : null]}>Sensors</Text>
-          </AnimatedPressable>
-          <AnimatedPressable
-            accessibilityLabel="Show sync diagnostics"
-            accessibilityRole="button"
-            onPress={() => setDebugView('sync')}
-            style={[styles.segmentButton, debugView === 'sync' ? styles.segmentButtonActive : null]}
-          >
-            <Text style={[styles.segmentText, debugView === 'sync' ? styles.segmentTextActive : null]}>Sync</Text>
-          </AnimatedPressable>
-        </View>
+        <SegmentedTabs
+          onChange={setDebugView}
+          options={[
+            { icon: 'calculator-outline', label: 'Calculated', value: 'calculated' },
+            { icon: 'pulse-outline', label: 'Sensors', value: 'sensors' },
+            { icon: 'sync-outline', label: 'Sync', value: 'sync' },
+          ]}
+          value={debugView}
+        />
 
         {debugView === 'calculated' ? (
         <RevealView>
@@ -395,9 +386,7 @@ export default function DebugScreen() {
             </View>
           </RevealView>
         )}
-      </ScrollView>
-      <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
-    </SafeAreaView>
+    </AppScreen>
   );
 }
 
@@ -680,58 +669,9 @@ const getSourceLabel = (source: StepDataSource): string => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   container: {
     gap: 14,
-    paddingBottom: 28,
     paddingHorizontal: 20,
-    paddingTop: 18,
-  },
-  header: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  subtitle: {
-    color: COLORS.mutedText,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  title: {
-    color: COLORS.text,
-    fontSize: 30,
-    fontWeight: '900',
-  },
-  segmentedControl: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.challenge,
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    padding: 5,
-  },
-  segmentButton: {
-    alignItems: 'center',
-    borderRadius: 6,
-    flex: 1,
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-  segmentButtonActive: {
-    backgroundColor: COLORS.challenge,
-  },
-  segmentText: {
-    color: COLORS.challenge,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  segmentTextActive: {
-    color: COLORS.surface,
   },
   pressed: {
     opacity: 0.78,

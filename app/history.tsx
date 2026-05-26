@@ -872,7 +872,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   modalButtonText: {
-    color: COLORS.surface,
+    color: COLORS.onAccent,
     fontSize: 14,
     fontWeight: '900',
   },

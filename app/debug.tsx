@@ -346,7 +346,7 @@ export default function DebugScreen() {
                 }}
                 style={({ pressed }) => [styles.saveButton, isSavingToFirestore ? styles.saveButtonBusy : null, pressed ? styles.pressed : null]}
               >
-                {isSavingToFirestore ? <ActivityIndicator color={COLORS.surface} /> : <Ionicons color={COLORS.surface} name="server-outline" size={18} />}
+                {isSavingToFirestore ? <ActivityIndicator color={COLORS.onAccent} /> : <Ionicons color={COLORS.onAccent} name="server-outline" size={18} />}
                 <Text style={styles.saveButtonText}>{isSavingToFirestore ? 'Saving' : 'Save reference to Firestore'}</Text>
               </AnimatedPressable>
               <Text style={styles.syncedText}>{`Checked ${formatSyncTime(references.syncedAt)} · app source ${getSourceLabel(source)}`}</Text>
@@ -745,7 +745,7 @@ const styles = StyleSheet.create({
     opacity: 0.82,
   },
   saveButtonText: {
-    color: COLORS.surface,
+    color: COLORS.onAccent,
     fontSize: 13,
     fontWeight: '900',
   },
@@ -1052,8 +1052,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   logBox: {
-    backgroundColor: '#08110D',
-    borderColor: '#173528',
+    backgroundColor: COLORS.ink,
+    borderColor: COLORS.border,
     borderRadius: 8,
     borderWidth: 1,
     minHeight: 44,
@@ -1066,19 +1066,19 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   logTime: {
-    color: '#7CE7A8',
+    color: COLORS.success,
     fontFamily: 'monospace',
     fontSize: 12,
     width: 72,
   },
   logLine: {
-    color: '#D9FFE8',
+    color: COLORS.text,
     flex: 1,
     fontFamily: 'monospace',
     fontSize: 12,
   },
   logEmpty: {
-    color: '#7CE7A8',
+    color: COLORS.success,
     fontFamily: 'monospace',
     fontSize: 12,
   },

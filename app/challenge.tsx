@@ -563,7 +563,7 @@ export default function ChallengeScreen() {
                                 isChallengeActive ? styles.challengeStopButton : styles.challengeStartButton,
                             ]}
                         >
-                            <Text style={[styles.challengeButtonText, isChallengeActive ? { color: COLORS.surface } : null]}>
+                            <Text style={[styles.challengeButtonText, isChallengeActive ? { color: COLORS.onDanger } : null]}>
                                 {isChallengeActive ? 'Pause Challenge' : 'Start Challenge'}
                             </Text>
                         </AnimatedPressable>
@@ -688,7 +688,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
     },
     permissionButtonText: {
-        color: COLORS.surface,
+        color: COLORS.onAccent,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -708,7 +708,7 @@ const styles = StyleSheet.create({
         paddingVertical: 12,
     },
     goalBannerText: {
-        color: COLORS.surface,
+        color: COLORS.onAccent,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -730,7 +730,7 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.danger,
     },
     challengeButtonText: {
-        color: COLORS.challengeText,
+        color: COLORS.onAccent,
         fontSize: 15,
         fontWeight: '800',
     },

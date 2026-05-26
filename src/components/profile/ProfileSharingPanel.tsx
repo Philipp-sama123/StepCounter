@@ -52,7 +52,7 @@ export const ProfileSharingPanel = ({
       variant="warning"
     >
       <Animated.View style={{ transform: [{ rotate: shareSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-        <Ionicons color={COLORS.surface} name={isSharing ? 'sync-outline' : 'share-social-outline'} size={18} />
+        <Ionicons color={COLORS.onAccent} name={isSharing ? 'sync-outline' : 'share-social-outline'} size={18} />
       </Animated.View>
       <Text style={styles.buttonText}>{isSharing ? 'Publishing...' : shareCode === null ? 'Create share code' : 'Refresh shared data'}</Text>
     </AppButton>
@@ -76,7 +76,7 @@ export const ProfileSharingPanel = ({
         onPress={onImport}
       >
         <Animated.View style={{ transform: [{ rotate: importSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-          <Ionicons color={COLORS.surface} name={isImporting ? 'sync-outline' : 'download-outline'} size={18} />
+          <Ionicons color={COLORS.onAccent} name={isImporting ? 'sync-outline' : 'download-outline'} size={18} />
         </Animated.View>
         <Text style={styles.buttonText}>{isImporting ? 'Importing...' : 'Import'}</Text>
       </AppButton>
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   buttonText: {
-    color: COLORS.surface,
+    color: COLORS.onAccent,
     fontSize: 14,
     fontWeight: '900',
   },

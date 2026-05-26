@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   primaryButtonText: {
-    color: COLORS.surface,
+    color: COLORS.onAccent,
     fontSize: 16,
     fontWeight: '800',
   },

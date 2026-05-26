@@ -167,7 +167,7 @@ export default function SharedHistoryScreen() {
             style={styles.iconButton}
           >
             <Animated.View style={{ transform: [{ rotate: refreshSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-              <Ionicons color={COLORS.surface} name={isLoading ? 'sync-outline' : 'refresh-outline'} size={20} />
+              <Ionicons color={COLORS.onAccent} name={isLoading ? 'sync-outline' : 'refresh-outline'} size={20} />
             </Animated.View>
           </AnimatedPressable>
           )}

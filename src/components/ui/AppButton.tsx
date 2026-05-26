@@ -31,7 +31,7 @@ export const AppButton = ({
   variant = 'primary',
 }: AppButtonProps) => {
   const isSecondary = variant === 'secondary';
-  const foregroundColor = isSecondary ? COLORS.action : COLORS.surface;
+  const foregroundColor = variant === 'danger' ? COLORS.onDanger : COLORS.onAccent;
 
   return (
     <AnimatedPressable
@@ -50,7 +50,7 @@ export const AppButton = ({
       {children ?? (
         <>
           {busy ? <ActivityIndicator color={foregroundColor} /> : icon ? <Ionicons color={foregroundColor} name={icon} size={18} /> : null}
-          <Text style={[styles.label, isSecondary ? styles.secondaryLabel : null]}>{busy ? getBusyLabel(label) : label}</Text>
+          <Text style={[styles.label, isSecondary ? styles.secondaryLabel : null, { color: foregroundColor }]}>{busy ? getBusyLabel(label) : label}</Text>
         </>
       )}
     </AnimatedPressable>
@@ -87,8 +87,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.action,
   },
   secondary: {
-    backgroundColor: COLORS.primarySoft,
-    borderColor: COLORS.primary,
+    backgroundColor: COLORS.action,
+    borderColor: COLORS.action,
     borderWidth: 1,
   },
   warning: {
@@ -104,11 +104,11 @@ const styles = StyleSheet.create({
     opacity: 0.84,
   },
   label: {
-    color: COLORS.surface,
+    color: COLORS.onAccent,
     fontSize: 15,
     fontWeight: '900',
   },
   secondaryLabel: {
-    color: COLORS.action,
+    color: COLORS.onAccent,
   },
 });

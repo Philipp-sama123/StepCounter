@@ -78,10 +78,11 @@ const ToastItem = ({ index, item, onHide, placement }: ToastItemProps) => {
   }, [item.id, opacity, placement, translateY]);
 
   const stackPosition = getStackPosition(placement, index);
+  const variant = item.variant ?? 'success';
 
   return (
-    <Animated.View style={[styles.toast, styles[item.variant ?? 'success'], stackPosition, { opacity, transform: [{ translateY }] }]}>
-      <Text style={styles.text}>{item.message}</Text>
+    <Animated.View style={[styles.toast, styles[variant], stackPosition, { opacity, transform: [{ translateY }] }]}>
+      <Text style={[styles.text, variant === 'success' ? styles.successText : null]}>{item.message}</Text>
     </Animated.View>
   );
 };
@@ -137,9 +138,12 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.action,
   },
   text: {
-    color: COLORS.surface,
+    color: COLORS.onDanger,
     fontSize: 14,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  successText: {
+    color: COLORS.onAccent,
   },
 });

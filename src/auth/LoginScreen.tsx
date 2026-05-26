@@ -120,7 +120,7 @@ export const LoginScreen = () => {
             }}
             style={({ pressed }) => [styles.primaryButton, pressed ? styles.pressed : null, !isConfigured ? styles.disabled : null]}
           >
-            {isSubmitting ? <ActivityIndicator color={COLORS.surface} /> : <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
+            {isSubmitting ? <ActivityIndicator color={COLORS.onAccent} /> : <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
           </Pressable>
 
           <Pressable
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   primaryButtonText: {
-    color: COLORS.surface,
+    color: COLORS.onAccent,
     fontSize: 16,
     fontWeight: '900',
   },

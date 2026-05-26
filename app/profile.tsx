@@ -274,7 +274,7 @@ export default function ProfileScreen() {
             }}
             style={styles.logoutButton}
           >
-            <Ionicons color={COLORS.surface} name="log-out-outline" size={18} />
+            <Ionicons color={COLORS.onDanger} name="log-out-outline" size={18} />
             <Text style={styles.logoutText}>Logout</Text>
           </AnimatedPressable>
           )}
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
   },
   logoutText: {
-    color: COLORS.surface,
+    color: COLORS.onDanger,
     fontSize: 13,
     fontWeight: '900',
   },

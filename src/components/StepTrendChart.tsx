@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { COLORS } from '../constants';
@@ -10,6 +10,7 @@ type StepTrendChartProps = {
   goal: number;
   history: StepHistoryEntry[];
   metric?: 'pace' | 'steps';
+  onEntryPress?: (entry: StepHistoryEntry) => void;
   paceByDate?: Record<string, number>;
   sessionSums?: Record<string, number>;
 };
@@ -42,7 +43,15 @@ const createAreaPath = (points: { x: number; y: number }[]): string => {
   return `${createLinePath(points)} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
 };
 
-export const StepTrendChart = ({ animationKey = 0, goal, history, metric = 'steps', paceByDate = {}, sessionSums = {} }: StepTrendChartProps) => {
+export const StepTrendChart = ({
+  animationKey = 0,
+  goal,
+  history,
+  metric = 'steps',
+  onEntryPress,
+  paceByDate = {},
+  sessionSums = {},
+}: StepTrendChartProps) => {
   const entryAnimation = useRef(new Animated.Value(0)).current;
   const revealAnimation = useRef(new Animated.Value(0)).current;
   const values = history.map((entry) => getEntryValue(entry, metric, paceByDate));
@@ -178,15 +187,16 @@ export const StepTrendChart = ({ animationKey = 0, goal, history, metric = 'step
                     {points.map((point, index) => {
                       const entry = history[index];
                       const reachedGoal = metric === 'steps' && entry.steps >= goal;
+                      const pointColor = reachedGoal ? COLORS.challenge : COLORS.action;
 
                       return (
                         <Circle
                           cx={point.x}
                           cy={point.y}
-                          fill={reachedGoal ? COLORS.success : COLORS.surface}
+                          fill={reachedGoal ? COLORS.challenge : COLORS.surface}
                           key={entry.date}
                           r={5}
-                          stroke={reachedGoal ? COLORS.success : COLORS.action}
+                          stroke={pointColor}
                           strokeWidth={3}
                         />
                       );
@@ -195,6 +205,24 @@ export const StepTrendChart = ({ animationKey = 0, goal, history, metric = 'step
                 </View>
               </Animated.View>
             </View>
+            {onEntryPress ? (
+              <View pointerEvents="box-none" style={styles.hitLayer}>
+                {points.map((point, index) => {
+                  const entry = history[index];
+
+                  return (
+                    <Pressable
+                      accessibilityLabel={`Open details for ${entry.dayName}`}
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      key={`${entry.date}-hit`}
+                      onPress={() => onEntryPress(entry)}
+                      style={[styles.pointHitTarget, { left: point.x - 22, top: point.y - 22 }]}
+                    />
+                  );
+                })}
+              </View>
+            ) : null}
 
             <View style={styles.axis}>
               {history.map((entry) => (
@@ -251,6 +279,19 @@ const styles = StyleSheet.create({
   },
   chartCanvas: {
     gap: 8,
+    position: 'relative',
+  },
+  hitLayer: {
+    height: CHART_HEIGHT,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+    width: '100%',
+  },
+  pointHitTarget: {
+    height: 44,
+    position: 'absolute',
+    width: 44,
   },
   svgWindow: {
     overflow: 'hidden',

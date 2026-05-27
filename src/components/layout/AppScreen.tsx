@@ -13,7 +13,7 @@ type AppScreenProps = {
 
 export const AppScreen = ({ children, contentStyle, overlays }: AppScreenProps) => (
   <SafeAreaView style={styles.safeArea}>
-    <StatusBar style="dark" />
+    <StatusBar style="light" />
     <ScrollView contentContainerStyle={[styles.content, contentStyle]} showsVerticalScrollIndicator={false}>
       {children}
     </ScrollView>

@@ -65,6 +65,7 @@ const RootNavigator = () => {
       <Tabs.Screen
         name="history"
         options={{
+          href: null,
           title: 'History',
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="calendar-outline" size={size} />,
         }}

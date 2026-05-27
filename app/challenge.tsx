@@ -19,6 +19,8 @@ import { ProgressRing } from '../src/components/ProgressRing';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { AppButton } from '../src/components/ui/AppButton';
+import { MetricCard } from '../src/components/ui/MetricCard';
+import { SurfacePanel } from '../src/components/ui/SurfacePanel';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { syncChallengeSession } from '../src/firebase/stepsSync';
 import { publishOwnSharedProfileSnapshot } from '../src/services/sharedProfilePublish';
@@ -27,11 +29,13 @@ import {
     getTodayString,
     readChallengeGoal,
     readChallengeSessions,
+    readRecentChallengeSessions,
     readDailyChallengeGoal,
     readGoal,
     saveChallengeGoal,
     saveChallengeSession,
     saveDailyChallengeGoal,
+    ChallengeSession,
 } from '../src/storage/stepStorage';
 import { appendToastMessage } from '../src/utils/toastQueue';
 import {
@@ -62,6 +66,7 @@ export default function ChallengeScreen() {
     const [goal, setGoal] = useState(DEFAULT_GOAL);
     const [challengeGoal, setChallengeGoal] = useState(DEFAULT_GOAL);
     const [dailyChallengeGoal, setDailyChallengeGoal] = useState(DEFAULT_GOAL);
+    const [recentSessions, setRecentSessions] = useState<Array<ChallengeSession & { date: string }>>([]);
     const [todayChallengeSteps, setTodayChallengeSteps] = useState(0);
     const [goalModalMode, setGoalModalMode] = useState<'daily-challenge' | 'session-challenge'>('session-challenge');
     const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
@@ -84,16 +89,18 @@ export default function ChallengeScreen() {
 
     useEffect(() => {
         const loadGoal = async (): Promise<void> => {
-            const [storedGoal, storedChallengeGoal, storedDailyChallengeGoal, todaySessions] = await Promise.all([
+            const [storedGoal, storedChallengeGoal, storedDailyChallengeGoal, todaySessions, storedRecentSessions] = await Promise.all([
                 readGoal(),
                 readChallengeGoal(),
                 readDailyChallengeGoal(),
                 readChallengeSessions(getTodayString()),
+                readRecentChallengeSessions(),
             ]);
             setGoal(storedGoal);
             setChallengeGoal(storedChallengeGoal);
             setDailyChallengeGoal(storedDailyChallengeGoal);
             setTodayChallengeSteps(sumSessionSteps(todaySessions));
+            setRecentSessions(storedRecentSessions);
         };
 
         void loadGoal();
@@ -114,6 +121,7 @@ export default function ChallengeScreen() {
     const handleRefreshSteps = async (): Promise<void> => {
         const message = await refreshSteps();
         showToast(message);
+        setRecentSessions(await readRecentChallengeSessions());
         setProgressResetKey((currentKey) => currentKey + 1);
         setStepReplayKey((currentKey) => currentKey + 1);
     };
@@ -290,7 +298,12 @@ export default function ChallengeScreen() {
     useFocusEffect(
         useCallback(() => {
             const loadTodayChallengeSteps = async (): Promise<void> => {
-                setTodayChallengeSteps(sumSessionSteps(await readChallengeSessions(getTodayString())));
+                const [todaySessions, storedRecentSessions] = await Promise.all([
+                    readChallengeSessions(getTodayString()),
+                    readRecentChallengeSessions(),
+                ]);
+                setTodayChallengeSteps(sumSessionSteps(todaySessions));
+                setRecentSessions(storedRecentSessions);
             };
 
             void loadTodayChallengeSteps();
@@ -522,6 +535,7 @@ export default function ChallengeScreen() {
                                         };
                                         await saveChallengeSession(today, session);
                                         setTodayChallengeSteps((currentSteps) => currentSteps + delta);
+                                        setRecentSessions(await readRecentChallengeSessions());
                                         setChallengeReward({
                                             durationMs: session.durationMs,
                                             goalPercent: sessionChallengeGoal > 0 ? Math.min(100, (delta / sessionChallengeGoal) * 100) : 0,
@@ -584,12 +598,101 @@ export default function ChallengeScreen() {
                     source={source}
                 />
 
+                <ChallengeHistoryPanel
+                    challengeGoal={challengeGoal}
+                    sessions={recentSessions}
+                />
+
         </AppScreen>
     );
 }
 
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+
+type ChallengeHistoryPanelProps = {
+    challengeGoal: number;
+    sessions: Array<ChallengeSession & { date: string }>;
+};
+
+const ChallengeHistoryPanel = ({ challengeGoal, sessions }: ChallengeHistoryPanelProps) => {
+    const visibleSessions = sessions.slice(0, 5);
+    const totalSteps = sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+    const bestSession = sessions.reduce<ChallengeHistoryPanelProps['sessions'][number] | null>(
+        (best, session) => (best === null || session.steps > best.steps ? session : best),
+        null,
+    );
+
+    return (
+        <SurfacePanel style={styles.historyPanel}>
+            <View style={styles.historyHeader}>
+                <View>
+                    <Text style={styles.historyTitle}>Challenge history</Text>
+                    <Text style={styles.historySubtitle}>Recent sessions saved on this device.</Text>
+                </View>
+                <Text style={styles.historyGoal}>{`${challengeGoal.toLocaleString()} goal`}</Text>
+            </View>
+            <View style={styles.historyMetrics}>
+                <MetricCard label="Sessions" style={styles.historyMetricCard} value={sessions.length.toLocaleString()} />
+                <MetricCard label="Steps" style={styles.historyMetricCard} value={totalSteps.toLocaleString()} />
+                <MetricCard label="Best" style={styles.historyMetricCard} value={bestSession === null ? '0' : bestSession.steps.toLocaleString()} />
+            </View>
+            <View style={styles.historyList}>
+                {visibleSessions.length === 0 ? (
+                    <View style={styles.emptyHistory}>
+                        <Text style={styles.emptyHistoryTitle}>No challenge sessions yet</Text>
+                        <Text style={styles.emptyHistoryText}>Start and pause a challenge to save your first session.</Text>
+                    </View>
+                ) : visibleSessions.map((session) => (
+                    <ChallengeHistoryRow key={`${session.date}-${session.startedAt}`} session={session} />
+                ))}
+            </View>
+        </SurfacePanel>
+    );
+};
+
+type ChallengeHistoryRowProps = {
+    session: ChallengeSession & { date: string };
+};
+
+const ChallengeHistoryRow = ({ session }: ChallengeHistoryRowProps) => {
+    const progress = Math.min(1, session.challengeGoal === undefined ? 0 : session.steps / Math.max(1, session.challengeGoal));
+
+    return (
+        <View style={styles.historyRow}>
+            <View style={styles.historyDateBlock}>
+                <Text style={styles.historyDay}>{formatSessionDay(session.startedAt)}</Text>
+                <Text style={styles.historyTime}>{formatSessionTime(session.startedAt)}</Text>
+            </View>
+            <View style={styles.historyBody}>
+                <View style={styles.historyTopLine}>
+                    <Text style={styles.historySteps}>{`${session.steps.toLocaleString()} steps`}</Text>
+                    <Text style={styles.historyPace}>{`${getSessionPace(session).toLocaleString()}/min`}</Text>
+                </View>
+                <View style={styles.historyTrack}>
+                    <View style={[styles.historyFill, { width: `${progress * 100}%` }]} />
+                </View>
+                <Text style={styles.historyMeta}>{`${formatDuration(session.durationMs)} · ${session.source ?? 'live-sensor'}`}</Text>
+            </View>
+        </View>
+    );
+};
+
+const getSessionPace = (session: ChallengeSession): number =>
+    session.durationMs <= 0 ? 0 : Math.round(session.steps / Math.max(1, session.durationMs / 60000));
+
+const formatDuration = (durationMs: number): string => {
+    const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+};
+
+const formatSessionDay = (timestamp: string): string =>
+    new Date(timestamp).toLocaleDateString(undefined, { weekday: 'short' });
+
+const formatSessionTime = (timestamp: string): string =>
+    new Date(timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
 const styles = StyleSheet.create({
     container: {
@@ -733,5 +836,119 @@ const styles = StyleSheet.create({
         color: COLORS.onAccent,
         fontSize: 15,
         fontWeight: '800',
+    },
+    historyPanel: {
+        gap: 14,
+    },
+    historyHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    historyTitle: {
+        color: COLORS.text,
+        fontSize: 16,
+        fontWeight: '900',
+    },
+    historySubtitle: {
+        color: COLORS.mutedText,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
+        marginTop: 2,
+    },
+    historyGoal: {
+        color: COLORS.primary,
+        fontSize: 12,
+        fontWeight: '900',
+    },
+    historyMetrics: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    historyMetricCard: {
+        flex: 1,
+        minHeight: 72,
+        width: undefined,
+    },
+    historyList: {
+        gap: 10,
+    },
+    emptyHistory: {
+        backgroundColor: COLORS.background,
+        borderColor: COLORS.border,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: 5,
+        padding: 14,
+    },
+    emptyHistoryTitle: {
+        color: COLORS.text,
+        fontSize: 14,
+        fontWeight: '900',
+    },
+    emptyHistoryText: {
+        color: COLORS.mutedText,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
+    },
+    historyRow: {
+        backgroundColor: COLORS.background,
+        borderColor: COLORS.border,
+        borderRadius: 8,
+        borderWidth: 1,
+        flexDirection: 'row',
+        gap: 12,
+        padding: 12,
+    },
+    historyDateBlock: {
+        width: 58,
+    },
+    historyDay: {
+        color: COLORS.text,
+        fontSize: 14,
+        fontWeight: '900',
+    },
+    historyTime: {
+        color: COLORS.mutedText,
+        fontSize: 10,
+        fontWeight: '800',
+        marginTop: 3,
+    },
+    historyBody: {
+        flex: 1,
+        gap: 7,
+    },
+    historyTopLine: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    historySteps: {
+        color: COLORS.text,
+        fontSize: 13,
+        fontWeight: '900',
+    },
+    historyPace: {
+        color: COLORS.primary,
+        fontSize: 12,
+        fontWeight: '900',
+    },
+    historyTrack: {
+        backgroundColor: COLORS.border,
+        borderRadius: 999,
+        height: 9,
+        overflow: 'hidden',
+    },
+    historyFill: {
+        backgroundColor: COLORS.challenge,
+        borderRadius: 999,
+        height: '100%',
+    },
+    historyMeta: {
+        color: COLORS.mutedText,
+        fontSize: 11,
+        fontWeight: '700',
     },
 });

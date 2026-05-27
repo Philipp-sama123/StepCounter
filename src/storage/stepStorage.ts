@@ -137,10 +137,11 @@ export const saveDailyChallengeGoal = async (goal: number): Promise<void> => {
   }
 };
 
-export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => {
+export const readRecentDays = async (dayCount: number): Promise<StepHistoryEntry[]> => {
+  const safeDayCount = Math.max(1, Math.floor(dayCount));
   const today = new Date(getTodayString());
-  const dates = Array.from({ length: LAST_SEVEN_DAYS }, (_, index) => {
-    const date = new Date(today.getTime() - (LAST_SEVEN_DAYS - 1 - index) * ONE_DAY_MS);
+  const dates = Array.from({ length: safeDayCount }, (_, index) => {
+    const date = new Date(today.getTime() - (safeDayCount - 1 - index) * ONE_DAY_MS);
     return toLocalDateString(date);
   });
 
@@ -166,6 +167,8 @@ export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => {
     }));
   }
 };
+
+export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => readRecentDays(LAST_SEVEN_DAYS);
 
 export type ChallengeSession = {
   startedAt: string;

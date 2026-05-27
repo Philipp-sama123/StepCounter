@@ -125,6 +125,27 @@ export const ProgressRing = ({
   };
 
   useEffect(() => {
+    let currentBaseProgress = targetProgress;
+    let currentOverflowProgress = targetOverflowProgress;
+    const updateDisplayRatio = (): void => {
+      setDisplayRatio(currentBaseProgress + (steps > goal && goal > 0 ? currentOverflowProgress : 0));
+    };
+    const progressListenerId = animatedProgress.addListener(({ value }) => {
+      currentBaseProgress = value;
+      updateDisplayRatio();
+    });
+    const overflowListenerId = animatedOverflowProgress.addListener(({ value }) => {
+      currentOverflowProgress = value;
+      updateDisplayRatio();
+    });
+
+    return () => {
+      animatedProgress.removeListener(progressListenerId);
+      animatedOverflowProgress.removeListener(overflowListenerId);
+    };
+  }, [animatedOverflowProgress, animatedProgress, goal, steps, targetOverflowProgress, targetProgress]);
+
+  useEffect(() => {
     if (resetAnimationKey !== resetAnimationKeyRef.current) {
       return;
     }
@@ -150,8 +171,6 @@ export const ProgressRing = ({
     } else {
       Animated.parallel([progressAnimation, overflowAnimation]).start();
     }
-
-    setDisplayRatio(targetRatio);
 
     if (steps > previousSteps.current) {
       playGainAnimation();

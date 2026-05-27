@@ -4,6 +4,7 @@ import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react
 
 import { COLORS } from '../constants';
 import { StepHistoryEntry } from '../storage/stepStorage';
+import { triggerSelectionHaptic } from '../utils/haptics';
 
 type StepTrendChartProps = {
   animationKey?: number;
@@ -216,7 +217,10 @@ export const StepTrendChart = ({
                       accessibilityRole="button"
                       hitSlop={8}
                       key={`${entry.date}-hit`}
-                      onPress={() => onEntryPress(entry)}
+                      onPress={() => {
+                        triggerSelectionHaptic();
+                        onEntryPress(entry);
+                      }}
                       style={[styles.pointHitTarget, { left: point.x - 22, top: point.y - 22 }]}
                     />
                   );

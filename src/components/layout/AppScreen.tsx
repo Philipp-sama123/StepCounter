@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { THEME } from '../../constants';
+import { BackgroundGradient } from './BackgroundGradient';
 
 type AppScreenProps = {
   children: ReactNode;
@@ -13,6 +14,7 @@ type AppScreenProps = {
 
 export const AppScreen = ({ children, contentStyle, overlays }: AppScreenProps) => (
   <SafeAreaView style={styles.safeArea}>
+    <BackgroundGradient />
     <StatusBar style="light" />
     <ScrollView contentContainerStyle={[styles.content, contentStyle]} showsVerticalScrollIndicator={false}>
       {children}

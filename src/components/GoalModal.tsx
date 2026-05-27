@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { COLORS, MAX_GOAL, MIN_GOAL } from '../constants';
+import { triggerSelectionHaptic } from '../utils/haptics';
 
 type GoalModalProps = {
   currentGoal: number;
@@ -62,13 +63,14 @@ export const GoalModal = ({
           />
           <Text style={styles.helper}>{helperText}</Text>
           <View style={styles.actions}>
-            <Pressable accessibilityRole="button" onPress={onClose} style={[styles.button, styles.secondaryButton]}>
+            <Pressable accessibilityRole="button" onPress={onClose} onPressIn={triggerSelectionHaptic} style={[styles.button, styles.secondaryButton]}>
               <Text style={styles.secondaryButtonText}>Cancel</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               disabled={!canSave}
               onPress={handleSave}
+              onPressIn={triggerSelectionHaptic}
               style={[styles.button, canSave ? styles.primaryButton : styles.disabledButton]}
             >
               <Text style={styles.primaryButtonText}>Save</Text>
@@ -130,7 +132,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.stoppedSoft,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.button,
   },
   disabledButton: {
     backgroundColor: COLORS.stopped,
@@ -141,7 +143,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   primaryButtonText: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: '800',
   },

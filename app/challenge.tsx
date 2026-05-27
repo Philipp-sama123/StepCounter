@@ -46,6 +46,7 @@ import {
     getVectorMagnitude,
     GenericSensorSample,
 } from '../src/utils/challengeMetrics';
+import { triggerErrorHaptic, triggerSuccessHaptic } from '../src/utils/haptics';
 
 export default function ChallengeScreen() {
     const [trackingMode, setTrackingMode] = useState<ChallengeTrackingMode>('live');
@@ -121,6 +122,7 @@ export default function ChallengeScreen() {
     const handleRefreshSteps = async (): Promise<void> => {
         const message = await refreshSteps();
         showToast(message);
+        triggerSuccessHaptic();
         setRecentSessions(await readRecentChallengeSessions());
         setProgressResetKey((currentKey) => currentKey + 1);
         setStepReplayKey((currentKey) => currentKey + 1);
@@ -135,6 +137,12 @@ export default function ChallengeScreen() {
     };
 
     const showServerToast = (message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
+        if (variant === 'error') {
+            triggerErrorHaptic();
+        } else {
+            triggerSuccessHaptic();
+        }
+
         setServerToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
     };
 
@@ -402,7 +410,6 @@ export default function ChallengeScreen() {
                         caption={isChallengeActive ? 'of challenge goal' : 'of daily challenge goal'}
                         completeColor={COLORS.challenge}
                         goal={ringGoal}
-                        overflowColor={COLORS.challengeText}
                         progressColor={COLORS.challenge}
                         resetAnimationKey={progressResetKey}
                         steps={ringSteps}
@@ -558,6 +565,7 @@ export default function ChallengeScreen() {
                                             }
                                         }
                                         showSessionToast(`+${delta.toLocaleString()} session steps added`);
+                                        triggerSuccessHaptic();
                                     } catch (error) {
                                         console.warn('Unable to save challenge session', error);
                                         showServerToast('Challenge session did not save.', 'error');
@@ -784,14 +792,14 @@ const styles = StyleSheet.create({
     },
     permissionButton: {
         alignItems: 'center',
-        backgroundColor: COLORS.primary,
+        backgroundColor: COLORS.button,
         borderRadius: 8,
         height: 36,
         justifyContent: 'center',
         paddingHorizontal: 12,
     },
     permissionButtonText: {
-        color: COLORS.onAccent,
+        color: COLORS.text,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -827,13 +835,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: 18,
     },
     challengeStartButton: {
-        backgroundColor: COLORS.action,
+        backgroundColor: COLORS.button,
     },
     challengeStopButton: {
         backgroundColor: COLORS.danger,
     },
     challengeButtonText: {
-        color: COLORS.onAccent,
+        color: COLORS.text,
         fontSize: 15,
         fontWeight: '800',
     },

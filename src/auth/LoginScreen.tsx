@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from './AuthContext';
 import { COLORS } from '../constants';
+import { BackgroundGradient } from '../components/layout/BackgroundGradient';
+import { triggerSelectionHaptic } from '../utils/haptics';
 
 export const LoginScreen = () => {
   const { isConfigured, registerWithEmail, signInWithEmail } = useAuth();
@@ -63,6 +65,7 @@ export const LoginScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <BackgroundGradient />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.appName}>StepCounter</Text>
@@ -118,9 +121,10 @@ export const LoginScreen = () => {
             onPress={() => {
               void handleEmailSubmit();
             }}
+            onPressIn={triggerSelectionHaptic}
             style={({ pressed }) => [styles.primaryButton, pressed ? styles.pressed : null, !isConfigured ? styles.disabled : null]}
           >
-            {isSubmitting ? <ActivityIndicator color={COLORS.onAccent} /> : <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
+            {isSubmitting ? <ActivityIndicator color={COLORS.text} /> : <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
           </Pressable>
 
           <Pressable
@@ -128,6 +132,7 @@ export const LoginScreen = () => {
             onPress={() => {
               void handlePasswordReset();
             }}
+            onPressIn={triggerSelectionHaptic}
             style={styles.forgotPassword}
           >
             <Text style={styles.forgotPasswordText}>Forgot password?</Text>
@@ -143,6 +148,7 @@ export const LoginScreen = () => {
               setIsRegistering((value) => !value);
               setError(null);
             }}
+            onPressIn={triggerSelectionHaptic}
             style={styles.switchMode}
           >
             <Text style={styles.switchModeText}>
@@ -232,10 +238,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.button,
   },
   primaryButtonText: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: '900',
   },

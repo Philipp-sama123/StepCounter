@@ -28,7 +28,8 @@
     "android": {
       "permissions": [
         "ACTIVITY_RECOGNITION",
-        "android.permission.health.READ_STEPS"
+        "android.permission.health.READ_STEPS",
+        "VIBRATE"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

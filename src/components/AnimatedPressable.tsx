@@ -10,6 +10,8 @@ import {
   ViewStyle,
 } from 'react-native';
 
+import { triggerSelectionHaptic } from '../utils/haptics';
+
 type AnimatedPressableProps = Omit<PressableProps, 'style' | 'children' | 'onPressIn' | 'onPressOut'> & {
   activePulse?: boolean;
   children: ReactNode;
@@ -74,6 +76,10 @@ export const AnimatedPressable = ({
   }, [activeOpacity, activePulse, activeScale]);
 
   const handlePressIn = (event: GestureResponderEvent): void => {
+    if (!props.disabled) {
+      triggerSelectionHaptic();
+    }
+
     Animated.spring(pressScale, {
       friction: 5,
       tension: 180,

@@ -2,12 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AppScreen } from '../src/components/layout/AppScreen';
-import { PageHeader } from '../src/components/layout/PageHeader';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { RevealView } from '../src/components/RevealView';
 import { SegmentedTabs } from '../src/components/SegmentedTabs';
@@ -20,12 +20,14 @@ import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { useDailyStepSync } from '../src/hooks/useDailyStepSync';
 import { useStepCounter } from '../src/hooks/useStepCounter';
 import { readBodyProfile, UserBodyProfile } from '../src/storage/profileStorage';
-import { getTodayString, readGoal, readLastSevenDays, readRecentDays, StepHistoryEntry } from '../src/storage/stepStorage';
+import { getTodayString, readGoal, readLastSevenDays, readRecentDays, readStepsForDate, StepHistoryEntry } from '../src/storage/stepStorage';
 import { estimateWalkingCalories } from '../src/utils/calories';
+import { triggerErrorHaptic, triggerSuccessHaptic } from '../src/utils/haptics';
 import { appendToastMessage } from '../src/utils/toastQueue';
 
 type DashboardRange = 'month' | 'week' | 'year';
 type RangeTotals = Record<DashboardRange, number>;
+const MIN_CALORIE_STEPS = 20;
 
 export default function HomeScreen() {
   const {
@@ -49,11 +51,20 @@ export default function HomeScreen() {
   const [isCalorieTooltipVisible, setIsCalorieTooltipVisible] = useState(false);
   const [progressResetKey, setProgressResetKey] = useState(0);
   const [selectedDay, setSelectedDay] = useState<StepHistoryEntry | null>(null);
+  const [selectedHeroDate, setSelectedHeroDate] = useState(getTodayString());
+  const [selectedHeroSteps, setSelectedHeroSteps] = useState(0);
   const [stepReplayKey, setStepReplayKey] = useState(0);
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const graphRangeRef = useRef<DashboardRange>(graphRange);
+  const todayStepsRef = useRef(todaySteps);
   const showServerToast = useCallback((message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
+    if (variant === 'error') {
+      triggerErrorHaptic();
+    } else {
+      triggerSuccessHaptic();
+    }
+
     setServerToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
   }, []);
   const { isSyncing: isSavingToFirestore, syncNow: saveDailyStepsToFirestore } = useDailyStepSync({
@@ -89,6 +100,7 @@ export default function HomeScreen() {
   const handleRefreshSteps = async (): Promise<void> => {
     const message = await refreshSteps();
     showToast(message, 'success');
+    triggerSuccessHaptic();
     await Promise.all([reloadRecentHistory(), reloadGraphHistory(graphRange), reloadRangeTotals()]);
     setProgressResetKey((currentKey) => currentKey + 1);
     setStepReplayKey((currentKey) => currentKey + 1);
@@ -111,6 +123,26 @@ export default function HomeScreen() {
     setServerToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
   };
 
+  useEffect(() => {
+    todayStepsRef.current = todaySteps;
+    if (selectedHeroDate === getTodayString()) {
+      setSelectedHeroSteps(todaySteps);
+    }
+  }, [selectedHeroDate, todaySteps]);
+
+  const loadSelectedHeroDay = useCallback(async (date: string): Promise<void> => {
+    const nextSteps = date === getTodayString() ? todayStepsRef.current : await readStepsForDate(date);
+    setSelectedHeroDate(date);
+    setSelectedHeroSteps(nextSteps);
+    setProgressResetKey((currentKey) => currentKey + 1);
+    setStepReplayKey((currentKey) => currentKey + 1);
+  }, []);
+
+  const moveSelectedHeroDay = (dayDelta: number): void => {
+    const nextDate = clampDateToToday(shiftDate(selectedHeroDate, dayDelta));
+    void loadSelectedHeroDay(nextDate);
+  };
+
   useFocusEffect(
     useCallback(() => {
       const loadDashboardData = async (): Promise<void> => {
@@ -125,18 +157,20 @@ export default function HomeScreen() {
       };
 
       void loadDashboardData();
+      void loadSelectedHeroDay(selectedHeroDate);
       setProgressResetKey((currentKey) => currentKey + 1);
       setStepReplayKey((currentKey) => currentKey + 1);
-    }, [reloadGraphHistory, reloadRangeTotals, reloadRecentHistory]),
+    }, [loadSelectedHeroDay, reloadGraphHistory, reloadRangeTotals, reloadRecentHistory, selectedHeroDate]),
   );
 
-  const hasReachedGoal = todaySteps >= goal;
-  const remainingSteps = Math.max(0, goal - todaySteps);
-  const rawPercent = goal > 0 ? (todaySteps / goal) * 100 : 0;
-  const progressPercent = rawPercent;
-  const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
   const todayString = getTodayString();
-  const todayCalories = estimateWalkingCalories(todaySteps, bodyProfile);
+  const isHeroToday = selectedHeroDate === todayString;
+  const heroSteps = isHeroToday ? todaySteps : selectedHeroSteps;
+  const hasReachedGoal = heroSteps >= goal;
+  const remainingSteps = Math.max(0, goal - heroSteps);
+  const progressPercent = goal > 0 ? (heroSteps / goal) * 100 : 0;
+  const heroCalories = estimateWalkingCalories(heroSteps, bodyProfile);
+  const calorieMessage = getCalorieMessage(heroSteps, heroCalories, bodyProfile);
   const recentHistory = history.map((entry) => (entry.date === todayString ? { ...entry, steps: Math.max(entry.steps, todaySteps) } : entry));
   const chartHistory = graphHistory.map((entry) => (entry.date === todayString ? { ...entry, steps: Math.max(entry.steps, todaySteps) } : entry));
 
@@ -157,9 +191,42 @@ export default function HomeScreen() {
         </>
       )}
     >
-        <PageHeader
-          accessory={(
-            <>
+        <RevealView replayKey={stepReplayKey} style={styles.hero}>
+          <View style={styles.dayNavigator}>
+            <HeroDayButton accessibilityLabel="Previous week" icon="play-skip-back-outline" onPress={() => moveSelectedHeroDay(-7)} />
+            <HeroDayButton accessibilityLabel="Previous day" icon="chevron-back-outline" onPress={() => moveSelectedHeroDay(-1)} />
+            <View style={styles.heroDateBadge}>
+              <Text style={styles.heroDateLabel}>{isHeroToday ? 'Today' : getShortWeekday(selectedHeroDate)}</Text>
+              <Text style={styles.heroDateText}>{formatShortDate(selectedHeroDate)}</Text>
+            </View>
+            <HeroDayButton accessibilityLabel="Next day" disabled={isHeroToday} icon="chevron-forward-outline" onPress={() => moveSelectedHeroDay(1)} />
+            <HeroDayButton accessibilityLabel="Next week" disabled={isHeroToday} icon="play-skip-forward-outline" onPress={() => moveSelectedHeroDay(7)} />
+          </View>
+
+          <ProgressRing goal={goal} resetAnimationKey={progressResetKey} size={282} steps={heroSteps} />
+          <View style={styles.stepBlock}>
+            <AnimatedStepCount replayKey={stepReplayKey} steps={heroSteps} style={styles.stepCount} />
+            <Text style={styles.stepLabel}>{isHeroToday ? 'steps today' : 'saved steps'}</Text>
+          </View>
+          <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
+
+          <View style={styles.statusRow}>
+            {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Waiting for step data</Text>}
+          </View>
+          <View style={styles.calorieRow}>
+            <View style={styles.caloriePill}>
+              <Ionicons color={COLORS.challenge} name="flame-outline" size={17} />
+              <Text style={styles.calorieText}>{calorieMessage}</Text>
+              <AnimatedPressable
+                accessibilityLabel="Show calorie calculation"
+                accessibilityRole="button"
+                onPress={() => setIsCalorieTooltipVisible((isVisible) => !isVisible)}
+                style={styles.calorieInfoButton}
+              >
+                <Ionicons color={COLORS.challenge} name="information-circle-outline" size={18} />
+              </AnimatedPressable>
+            </View>
+            <View style={styles.calorieActions}>
               <HeaderActionButton
                 accessibilityLabel="Refresh steps"
                 busy={isRefreshing}
@@ -176,41 +243,12 @@ export default function HomeScreen() {
                   void handleSaveToFirestore();
                 }}
               />
-            </>
-          )}
-          subtitle="Combined Mode"
-          title={displayName}
-        />
-
-        <RevealView replayKey={stepReplayKey} style={styles.hero}>
-          <ProgressRing goal={goal} resetAnimationKey={progressResetKey} steps={todaySteps} />
-          <View style={styles.stepBlock}>
-            <AnimatedStepCount replayKey={stepReplayKey} steps={todaySteps} style={styles.stepCount} />
-            <Text style={styles.stepLabel}>steps today</Text>
-          </View>
-          <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
-
-          <View style={styles.statusRow}>
-            {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Waiting for step data</Text>}
-          </View>
-          <View style={styles.caloriePill}>
-            <Ionicons color={COLORS.challenge} name="flame-outline" size={17} />
-            <Text style={styles.calorieText}>
-              {todayCalories > 0 ? `${todayCalories.toLocaleString()} kcal burned today` : 'Add weight in Profile for calories'}
-            </Text>
-            <AnimatedPressable
-              accessibilityLabel="Show calorie calculation"
-              accessibilityRole="button"
-              onPress={() => setIsCalorieTooltipVisible((isVisible) => !isVisible)}
-              style={styles.calorieInfoButton}
-            >
-              <Ionicons color={COLORS.challenge} name="information-circle-outline" size={18} />
-            </AnimatedPressable>
+            </View>
           </View>
           {isCalorieTooltipVisible ? (
             <View style={styles.calorieTooltip}>
               <Text style={styles.calorieTooltipTitle}>Calorie estimate</Text>
-              <TooltipCalcRow label="1. Steps" value="Today&apos;s step count" />
+              <TooltipCalcRow label="1. Steps" value={isHeroToday ? "Today's step count" : 'Saved steps for the selected day'} />
               <TooltipCalcRow label="2. Step length" value="height x 0.414, or 0.75 m fallback" />
               <TooltipCalcRow label="3. Distance" value="steps x step length / 1000" />
               <TooltipCalcRow label="4. Calories" value="distance km x weight kg x 0.57" />
@@ -316,6 +354,34 @@ const getRangeDayCount = (range: DashboardRange): number => {
 const sumSteps = (entries: StepHistoryEntry[]): number =>
   entries.reduce((total, entry) => total + Math.max(0, Math.floor(entry.steps)), 0);
 
+const getCalorieMessage = (steps: number, calories: number, profile: UserBodyProfile | null): string => {
+  if (steps < MIN_CALORIE_STEPS) {
+    return 'Calories available after more steps';
+  }
+
+  if ((profile?.currentWeightKg ?? 0) <= 0) {
+    return 'Add weight in Profile for calories';
+  }
+
+  return `${calories.toLocaleString()} kcal burned`;
+};
+
+const shiftDate = (date: string, dayDelta: number): string => {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + dayDelta);
+  return toLocalDateString(nextDate);
+};
+
+const clampDateToToday = (date: string): string =>
+  new Date(date).getTime() > new Date(getTodayString()).getTime() ? getTodayString() : date;
+
+const toLocalDateString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 type RangeTotalCardProps = {
   label: string;
   value: number;
@@ -336,7 +402,26 @@ const HeaderActionButton = ({ accessibilityLabel, busy, icon, onPress }: HeaderA
     onPress={onPress}
     style={[styles.headerAction, busy ? styles.headerActionBusy : null]}
   >
-    {busy ? <ActivityIndicator color={COLORS.onAccent} size="small" /> : <Ionicons color={COLORS.onAccent} name={icon} size={19} />}
+    {busy ? <ActivityIndicator color={COLORS.text} size="small" /> : <Ionicons color={COLORS.text} name={icon} size={19} />}
+  </AnimatedPressable>
+);
+
+type HeroDayButtonProps = {
+  accessibilityLabel: string;
+  disabled?: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+};
+
+const HeroDayButton = ({ accessibilityLabel, disabled = false, icon, onPress }: HeroDayButtonProps) => (
+  <AnimatedPressable
+    accessibilityLabel={accessibilityLabel}
+    accessibilityRole="button"
+    disabled={disabled}
+    onPress={onPress}
+    style={[styles.heroDayButton, disabled ? styles.heroDayButtonDisabled : null]}
+  >
+    <Ionicons color={disabled ? COLORS.stopped : COLORS.text} name={icon} size={17} />
   </AnimatedPressable>
 );
 
@@ -486,10 +571,14 @@ const ModalProgressBar = ({ progress, replayKey }: ModalProgressBarProps) => {
     <View style={styles.modalProgressWrap}>
       <Animated.View style={[styles.modalProgressOuter, { transform: [{ scale: rewardPulse }] }]}>
         <View style={styles.modalProgressTrack}>
-          <Animated.View style={[styles.modalProgressFill, { width }]} />
+          <Animated.View style={[styles.modalProgressFill, { width }]}>
+            <ProgressFillGradient gradientId="modalBaseProgressGradient" endColor={COLORS.challenge} startColor={COLORS.action} />
+          </Animated.View>
         </View>
         {progress > 1 ? (
-          <Animated.View style={[styles.modalProgressOverflowFill, { width: overflowWidth }]} />
+          <Animated.View style={[styles.modalProgressOverflowFill, { width: overflowWidth }]}>
+            <ProgressFillGradient gradientId="modalOverflowProgressGradient" endColor={COLORS.danger} startColor={COLORS.challenge} />
+          </Animated.View>
         ) : null}
       </Animated.View>
       <Text style={styles.modalProgressText}>{`${formatPercent(progress)} of daily goal`}</Text>
@@ -499,8 +588,35 @@ const ModalProgressBar = ({ progress, replayKey }: ModalProgressBarProps) => {
 
 const formatPercent = (ratio: number): string => `${(ratio * 100).toFixed(2)}%`;
 
+type ProgressFillGradientProps = {
+  endColor: string;
+  gradientId: string;
+  startColor: string;
+};
+
+const ProgressFillGradient = ({ endColor, gradientId, startColor }: ProgressFillGradientProps) => (
+  <Svg height="100%" width="100%">
+    <Defs>
+      <LinearGradient id={gradientId} x1="0" x2="1" y1="0" y2="0">
+        <Stop offset="0" stopColor={startColor} />
+        <Stop offset="1" stopColor={endColor} />
+      </LinearGradient>
+    </Defs>
+    <Rect fill={`url(#${gradientId})`} height="100%" width="100%" x="0" y="0" />
+  </Svg>
+);
+
 const getFullWeekday = (date: string): string =>
   new Date(date).toLocaleDateString(undefined, { weekday: 'long' });
+
+const getShortWeekday = (date: string): string =>
+  new Date(date).toLocaleDateString(undefined, { weekday: 'short' });
+
+const formatShortDate = (date: string): string =>
+  new Date(date).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+  });
 
 const formatDisplayDate = (date: string): string =>
   new Date(date).toLocaleDateString(undefined, {
@@ -573,9 +689,51 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingTop: 8,
   },
+  dayNavigator: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  heroDayButton: {
+    alignItems: 'center',
+    backgroundColor: COLORS.button,
+    borderRadius: 8,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  heroDayButtonDisabled: {
+    backgroundColor: COLORS.stoppedSoft,
+    opacity: 0.72,
+  },
+  heroDateBadge: {
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    gap: 2,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  heroDateLabel: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  heroDateText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '900',
+  },
   headerAction: {
     alignItems: 'center',
-    backgroundColor: COLORS.action,
+    backgroundColor: COLORS.button,
     borderRadius: 8,
     height: 40,
     justifyContent: 'center',
@@ -607,6 +765,12 @@ const styles = StyleSheet.create({
     minHeight: 38,
     justifyContent: 'center',
   },
+  calorieRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
   caloriePill: {
     alignItems: 'center',
     backgroundColor: COLORS.challengeSoft,
@@ -615,8 +779,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: 'row',
     gap: 8,
+    flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 9,
+  },
+  calorieActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
   calorieText: {
     color: COLORS.text,
@@ -899,12 +1068,14 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.action,
     borderRadius: 999,
     height: '100%',
+    overflow: 'hidden',
   },
   modalProgressOverflowFill: {
     backgroundColor: COLORS.challenge,
     borderRadius: 999,
     height: 16,
     left: 0,
+    overflow: 'hidden',
     position: 'absolute',
     top: 3,
   },
@@ -940,13 +1111,13 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     alignItems: 'center',
-    backgroundColor: COLORS.action,
+    backgroundColor: COLORS.button,
     borderRadius: 8,
     justifyContent: 'center',
     minHeight: 44,
   },
   modalButtonText: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
     fontSize: 14,
     fontWeight: '900',
   },

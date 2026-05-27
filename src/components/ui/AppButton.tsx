@@ -31,7 +31,7 @@ export const AppButton = ({
   variant = 'primary',
 }: AppButtonProps) => {
   const isSecondary = variant === 'secondary';
-  const foregroundColor = variant === 'danger' ? COLORS.onDanger : COLORS.onAccent;
+  const foregroundColor = variant === 'danger' ? COLORS.onDanger : COLORS.text;
 
   return (
     <AnimatedPressable
@@ -84,11 +84,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   primary: {
-    backgroundColor: COLORS.action,
+    backgroundColor: COLORS.button,
   },
   secondary: {
-    backgroundColor: COLORS.action,
-    borderColor: COLORS.action,
+    backgroundColor: COLORS.button,
+    borderColor: COLORS.buttonBorder,
     borderWidth: 1,
   },
   warning: {
@@ -104,11 +104,11 @@ const styles = StyleSheet.create({
     opacity: 0.84,
   },
   label: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
     fontSize: 15,
     fontWeight: '900',
   },
   secondaryLabel: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
   },
 });

@@ -23,8 +23,8 @@ export const BAR_MIN_HEIGHT = 8;
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const COLORS = {
-  background: '#080D0A',
-  surface: '#111A14',
+  background: '#111315',
+  surface: '#1A1D20',
   text: '#F3F7EF',
   mutedText: '#9DA9A0',
   border: '#26332A',
@@ -49,6 +49,8 @@ export const COLORS = {
   stoppedSoft: '#1A221D',
   bar: '#FACC15',
   barSoft: '#26240F',
+  button: '#2A2E32',
+  buttonBorder: '#3A3F44',
   danger: '#EF4444',
 } as const;
 

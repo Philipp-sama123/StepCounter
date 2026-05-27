@@ -13,6 +13,7 @@ import {
 
 import { COLORS } from '../constants';
 import { getBmi, UserBodyProfile } from '../storage/profileStorage';
+import { triggerSelectionHaptic } from '../utils/haptics';
 
 type ProfileModalProps = {
   isVisible: boolean;
@@ -95,7 +96,10 @@ export const ProfileModal = ({ isVisible, onClose, onSave, profile }: ProfileMod
               <Text style={styles.trackingText}>Save each weight entry with its timestamp.</Text>
             </View>
             <Switch
-              onValueChange={setWeightTrackingEnabled}
+              onValueChange={(value) => {
+                triggerSelectionHaptic();
+                setWeightTrackingEnabled(value);
+              }}
               thumbColor={weightTrackingEnabled ? COLORS.surface : COLORS.stopped}
               trackColor={{ false: COLORS.stoppedSoft, true: COLORS.action }}
               value={weightTrackingEnabled}
@@ -108,13 +112,14 @@ export const ProfileModal = ({ isVisible, onClose, onSave, profile }: ProfileMod
           </View>
 
           <View style={styles.actions}>
-            <Pressable accessibilityRole="button" onPress={onClose} style={[styles.button, styles.secondaryButton]}>
+            <Pressable accessibilityRole="button" onPress={onClose} onPressIn={triggerSelectionHaptic} style={[styles.button, styles.secondaryButton]}>
               <Text style={styles.secondaryButtonText}>Cancel</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
               disabled={!canSave}
               onPress={handleSave}
+              onPressIn={triggerSelectionHaptic}
               style={[styles.button, canSave ? styles.primaryButton : styles.disabledButton]}
             >
               <Text style={styles.primaryButtonText}>Save</Text>
@@ -238,7 +243,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.stoppedSoft,
   },
   primaryButton: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.button,
   },
   disabledButton: {
     backgroundColor: COLORS.stopped,
@@ -249,7 +254,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   primaryButtonText: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
     fontSize: 16,
     fontWeight: '900',
   },

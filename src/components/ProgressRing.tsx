@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import {
   COLORS,
@@ -8,26 +8,27 @@ import {
   HOME_PROGRESS_RING_SIZE,
   HOME_PROGRESS_RING_WIDTH,
 } from '../constants';
+import { triggerSelectionHaptic, triggerSuccessHaptic } from '../utils/haptics';
 
 type ProgressRingProps = {
   steps: number;
   goal: number;
   caption?: string;
   completeColor?: string;
-  overflowColor?: string;
   progressColor?: string;
   resetAnimationKey?: number;
+  size?: number;
 };
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export const ProgressRing = ({
   caption = 'of daily goal',
-  completeColor = COLORS.success,
+  completeColor = COLORS.action,
   goal,
-  overflowColor = COLORS.challengeText,
   progressColor = COLORS.action,
   resetAnimationKey = 0,
+  size = HOME_PROGRESS_RING_SIZE,
   steps,
 }: ProgressRingProps) => {
   const targetRatio = goal > 0 ? steps / goal : 0;
@@ -42,7 +43,24 @@ export const ProgressRing = ({
   const fullPulseScale = useRef(new Animated.Value(1)).current;
   const fullPulseOpacity = useRef(new Animated.Value(0)).current;
   const overflowPulseScale = useRef(new Animated.Value(1)).current;
+  const overflowPulseOpacity = useRef(new Animated.Value(0)).current;
   const percentageScale = useRef(new Animated.Value(1)).current;
+  const lastHapticAt = useRef(0);
+
+  const playProgressHaptic = (type: 'fill' | 'complete'): void => {
+    const now = Date.now();
+    if (now - lastHapticAt.current < 220) {
+      return;
+    }
+
+    lastHapticAt.current = now;
+    if (type === 'complete') {
+      triggerSuccessHaptic();
+      return;
+    }
+
+    triggerSelectionHaptic();
+  };
 
   const playGainAnimation = (delay = 0): void => {
     Animated.sequence([
@@ -106,19 +124,27 @@ export const ProgressRing = ({
     ]).start();
   };
 
-  const playOverflowPulseAnimation = (delay = 0): void => {
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.spring(overflowPulseScale, {
-        friction: 5,
-        tension: 150,
-        toValue: 1.045,
-        useNativeDriver: true,
-      }),
-      Animated.spring(overflowPulseScale, {
-        friction: 7,
-        tension: 130,
-        toValue: 1,
+  const playOverflowPulseAnimation = (): void => {
+    overflowPulseScale.setValue(1);
+    overflowPulseOpacity.setValue(0.4);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(overflowPulseScale, {
+          friction: 5,
+          tension: 150,
+          toValue: 1.18,
+          useNativeDriver: true,
+        }),
+        Animated.spring(overflowPulseScale, {
+          friction: 7,
+          tension: 130,
+          toValue: 1,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(overflowPulseOpacity, {
+        duration: 520,
+        toValue: 0,
         useNativeDriver: true,
       }),
     ]).start();
@@ -174,18 +200,19 @@ export const ProgressRing = ({
 
     if (steps > previousSteps.current) {
       playGainAnimation();
+      playProgressHaptic(steps >= goal && goal > 0 ? 'complete' : 'fill');
     }
 
     if (reachedGoalThisUpdate) {
       playFullPulseAnimation();
-    }
-
-    if (steps > previousSteps.current && steps > goal && goal > 0) {
-      playOverflowPulseAnimation(reachedGoalThisUpdate ? 780 : 0);
+      playOverflowPulseAnimation();
+      playProgressHaptic('complete');
+    } else if (steps > goal && steps > previousSteps.current) {
+      playOverflowPulseAnimation();
     }
 
     previousSteps.current = steps;
-  }, [animatedOverflowProgress, animatedProgress, goal, overflowPulseScale, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
+  }, [animatedOverflowProgress, animatedProgress, goal, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
 
   useEffect(() => {
     if (resetAnimationKey === resetAnimationKeyRef.current) {
@@ -219,16 +246,19 @@ export const ProgressRing = ({
     playGainAnimation(200);
     if (steps >= goal && goal > 0) {
       playFullPulseAnimation();
-      playOverflowPulseAnimation(860);
+      playProgressHaptic('complete');
+    }
+    if (steps > goal && goal > 0) {
+      playOverflowPulseAnimation();
     }
     previousSteps.current = steps;
-  }, [animatedOverflowProgress, animatedProgress, goal, overflowPulseScale, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
+  }, [animatedOverflowProgress, animatedProgress, goal, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
 
   const isComplete = steps >= goal;
   const baseDisplayRatio = Math.min(displayRatio, 1);
   const percentage = formatProgressPercentage(baseDisplayRatio);
   const overflowPercentage = goal > 0 && steps > goal ? formatProgressPercentage((steps - goal) / goal) : null;
-  const radius = (HOME_PROGRESS_RING_SIZE - HOME_PROGRESS_RING_WIDTH - HOME_PROGRESS_RING_PADDING) / 2;
+  const radius = (size - HOME_PROGRESS_RING_WIDTH - HOME_PROGRESS_RING_PADDING) / 2;
   const overflowRadius = radius;
   const overflowStrokeWidth = HOME_PROGRESS_RING_WIDTH + 8;
   const circumference = 2 * Math.PI * radius;
@@ -246,23 +276,34 @@ export const ProgressRing = ({
   const shouldShowOverflow = steps > goal && goal > 0;
 
   return (
-    <Animated.View style={[styles.ring, { transform: [{ scale: ringScale }] }]}>
-      <Animated.View style={[styles.fullPulse, { opacity: fullPulseOpacity, transform: [{ scale: fullPulseScale }] }]} />
-      <Svg height={HOME_PROGRESS_RING_SIZE} style={styles.svg} width={HOME_PROGRESS_RING_SIZE}>
+    <Animated.View style={[styles.ring, { borderRadius: size / 2, height: size, width: size, transform: [{ scale: ringScale }] }]}>
+      <Animated.View style={[styles.fullPulse, { borderRadius: size / 2, opacity: fullPulseOpacity, transform: [{ scale: fullPulseScale }] }]} />
+      <Animated.View style={[styles.overflowPulse, { borderRadius: size / 2, opacity: overflowPulseOpacity, transform: [{ scale: overflowPulseScale }] }]} />
+      <Svg height={size} style={styles.svg} width={size}>
+        <Defs>
+          <LinearGradient id="ringProgressGradient" x1="0" x2="1" y1="0" y2="1">
+            <Stop offset="0" stopColor={COLORS.action} />
+            <Stop offset="1" stopColor={COLORS.challenge} />
+          </LinearGradient>
+          <LinearGradient id="ringOverflowGradient" x1="0" x2="1" y1="0" y2="1">
+            <Stop offset="0" stopColor={COLORS.challenge} />
+            <Stop offset="1" stopColor={COLORS.danger} />
+          </LinearGradient>
+        </Defs>
         <Circle
-          cx={HOME_PROGRESS_RING_SIZE / 2}
-          cy={HOME_PROGRESS_RING_SIZE / 2}
+          cx={size / 2}
+          cy={size / 2}
           fill="none"
           r={radius}
           stroke={COLORS.border}
           strokeWidth={HOME_PROGRESS_RING_WIDTH}
         />
         <AnimatedCircle
-          cx={HOME_PROGRESS_RING_SIZE / 2}
-          cy={HOME_PROGRESS_RING_SIZE / 2}
+          cx={size / 2}
+          cy={size / 2}
           fill="none"
           r={radius}
-          stroke={ringColor}
+          stroke="url(#ringProgressGradient)"
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
@@ -270,33 +311,39 @@ export const ProgressRing = ({
         />
       </Svg>
       {shouldShowOverflow ? (
-        <Animated.View style={[styles.overflowLayer, { transform: [{ scale: overflowPulseScale }] }]}>
-          <Svg height={HOME_PROGRESS_RING_SIZE} style={styles.svg} width={HOME_PROGRESS_RING_SIZE}>
+        <View style={styles.overflowLayer}>
+          <Svg height={size} style={styles.svg} width={size}>
+            <Defs>
+              <LinearGradient id="ringOverflowGradientLayer" x1="0" x2="1" y1="0" y2="1">
+                <Stop offset="0" stopColor={COLORS.challenge} />
+                <Stop offset="1" stopColor={COLORS.danger} />
+              </LinearGradient>
+            </Defs>
             <AnimatedCircle
-              cx={HOME_PROGRESS_RING_SIZE / 2}
-              cy={HOME_PROGRESS_RING_SIZE / 2}
+              cx={size / 2}
+              cy={size / 2}
               fill="none"
               opacity={0.3}
               r={overflowRadius}
-              stroke={overflowColor}
+              stroke="url(#ringOverflowGradientLayer)"
               strokeDasharray={overflowCircumference}
               strokeDashoffset={overflowStrokeDashoffset}
               strokeLinecap="round"
               strokeWidth={overflowStrokeWidth + 8}
             />
             <AnimatedCircle
-              cx={HOME_PROGRESS_RING_SIZE / 2}
-              cy={HOME_PROGRESS_RING_SIZE / 2}
+              cx={size / 2}
+              cy={size / 2}
               fill="none"
               r={overflowRadius}
-              stroke={overflowColor}
+              stroke="url(#ringOverflowGradientLayer)"
               strokeDasharray={overflowCircumference}
               strokeDashoffset={overflowStrokeDashoffset}
               strokeLinecap="round"
               strokeWidth={overflowStrokeWidth}
             />
           </Svg>
-        </Animated.View>
+        </View>
       ) : null}
       <View style={styles.center}>
         <Animated.View style={{ transform: [{ scale: percentageScale }] }}>
@@ -350,9 +397,6 @@ const hasCrossedGoalCycle = (previousSteps: number, nextSteps: number, goal: num
 
 const styles = StyleSheet.create({
   ring: {
-    width: HOME_PROGRESS_RING_SIZE,
-    height: HOME_PROGRESS_RING_SIZE,
-    borderRadius: HOME_PROGRESS_RING_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.surface,
@@ -360,8 +404,12 @@ const styles = StyleSheet.create({
   fullPulse: {
     ...StyleSheet.absoluteFillObject,
     borderColor: COLORS.challengeText,
-    borderRadius: HOME_PROGRESS_RING_SIZE / 2,
     borderWidth: 4,
+  },
+  overflowPulse: {
+    ...StyleSheet.absoluteFillObject,
+    borderColor: COLORS.danger,
+    borderWidth: 5,
   },
   svg: {
     position: 'absolute',

@@ -346,7 +346,7 @@ export default function DebugScreen() {
                 }}
                 style={({ pressed }) => [styles.saveButton, isSavingToFirestore ? styles.saveButtonBusy : null, pressed ? styles.pressed : null]}
               >
-                {isSavingToFirestore ? <ActivityIndicator color={COLORS.onAccent} /> : <Ionicons color={COLORS.onAccent} name="server-outline" size={18} />}
+                {isSavingToFirestore ? <ActivityIndicator color={COLORS.text} /> : <Ionicons color={COLORS.text} name="server-outline" size={18} />}
                 <Text style={styles.saveButtonText}>{isSavingToFirestore ? 'Saving' : 'Save reference to Firestore'}</Text>
               </AnimatedPressable>
               <Text style={styles.syncedText}>{`Checked ${formatSyncTime(references.syncedAt)} · app source ${getSourceLabel(source)}`}</Text>
@@ -733,7 +733,7 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     alignItems: 'center',
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.button,
     borderRadius: 8,
     flexDirection: 'row',
     gap: 8,
@@ -745,7 +745,7 @@ const styles = StyleSheet.create({
     opacity: 0.82,
   },
   saveButtonText: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
     fontSize: 13,
     fontWeight: '900',
   },

@@ -8,7 +8,7 @@ import {
   HOME_PROGRESS_RING_SIZE,
   HOME_PROGRESS_RING_WIDTH,
 } from '../constants';
-import { triggerSelectionHaptic, triggerSuccessHaptic } from '../utils/haptics';
+import { triggerSuccessHaptic } from '../utils/haptics';
 
 type ProgressRingProps = {
   steps: number;
@@ -45,22 +45,6 @@ export const ProgressRing = ({
   const overflowPulseScale = useRef(new Animated.Value(1)).current;
   const overflowPulseOpacity = useRef(new Animated.Value(0)).current;
   const percentageScale = useRef(new Animated.Value(1)).current;
-  const lastHapticAt = useRef(0);
-
-  const playProgressHaptic = (type: 'fill' | 'complete'): void => {
-    const now = Date.now();
-    if (now - lastHapticAt.current < 220) {
-      return;
-    }
-
-    lastHapticAt.current = now;
-    if (type === 'complete') {
-      triggerSuccessHaptic();
-      return;
-    }
-
-    triggerSelectionHaptic();
-  };
 
   const playGainAnimation = (delay = 0): void => {
     Animated.sequence([
@@ -124,6 +108,11 @@ export const ProgressRing = ({
     ]).start();
   };
 
+  const playFullFeedback = (): void => {
+    playFullPulseAnimation();
+    triggerSuccessHaptic();
+  };
+
   const playOverflowPulseAnimation = (): void => {
     overflowPulseScale.setValue(1);
     overflowPulseOpacity.setValue(0.4);
@@ -148,6 +137,11 @@ export const ProgressRing = ({
         useNativeDriver: true,
       }),
     ]).start();
+  };
+
+  const playOverflowFeedback = (): void => {
+    playOverflowPulseAnimation();
+    triggerSuccessHaptic();
   };
 
   useEffect(() => {
@@ -176,7 +170,10 @@ export const ProgressRing = ({
       return;
     }
 
-    const reachedGoalThisUpdate = hasCrossedGoalCycle(previousSteps.current, steps, goal);
+    const previousStepCount = previousSteps.current;
+    const reachedGoalThisUpdate = hasCrossedGoalCycle(previousStepCount, steps, goal);
+    const gainedSteps = steps > previousStepCount;
+    const shouldPlayOverflowFeedback = gainedSteps && steps > goal && goal > 0;
     const progressAnimation = Animated.timing(animatedProgress, {
       duration: 650,
       toValue: targetProgress,
@@ -189,26 +186,31 @@ export const ProgressRing = ({
     });
 
     if (reachedGoalThisUpdate) {
-      Animated.sequence([
-        progressAnimation,
-        Animated.delay(110),
-        overflowAnimation,
-      ]).start();
+      Animated.sequence([progressAnimation]).start(({ finished }) => {
+        if (!finished) {
+          return;
+        }
+
+        playFullFeedback();
+        Animated.sequence([
+          Animated.delay(targetOverflowProgress > 0 ? 110 : 0),
+          overflowAnimation,
+        ]).start(({ finished: overflowFinished }) => {
+          if (overflowFinished && targetOverflowProgress > 0) {
+            playOverflowFeedback();
+          }
+        });
+      });
     } else {
-      Animated.parallel([progressAnimation, overflowAnimation]).start();
+      Animated.parallel([progressAnimation, overflowAnimation]).start(({ finished }) => {
+        if (finished && shouldPlayOverflowFeedback) {
+          playOverflowFeedback();
+        }
+      });
     }
 
-    if (steps > previousSteps.current) {
+    if (gainedSteps) {
       playGainAnimation();
-      playProgressHaptic(steps >= goal && goal > 0 ? 'complete' : 'fill');
-    }
-
-    if (reachedGoalThisUpdate) {
-      playFullPulseAnimation();
-      playOverflowPulseAnimation();
-      playProgressHaptic('complete');
-    } else if (steps > goal && steps > previousSteps.current) {
-      playOverflowPulseAnimation();
     }
 
     previousSteps.current = steps;
@@ -228,29 +230,36 @@ export const ProgressRing = ({
 
     Animated.sequence([
       Animated.delay(80),
+      Animated.timing(animatedProgress, {
+        duration: 660,
+        toValue: targetProgress,
+        useNativeDriver: false,
+      }),
+    ]).start(({ finished }) => {
+      if (!finished) {
+        return;
+      }
+
+      if (steps >= goal && goal > 0) {
+        playFullFeedback();
+      }
+
       Animated.sequence([
-        Animated.timing(animatedProgress, {
-          duration: 660,
-          toValue: targetProgress,
-          useNativeDriver: false,
-        }),
         Animated.delay(targetOverflowProgress > 0 ? 110 : 0),
         Animated.timing(animatedOverflowProgress, {
           duration: targetOverflowProgress > 0 ? 520 : 1,
           toValue: targetOverflowProgress,
           useNativeDriver: false,
         }),
-      ]),
-    ]).start(() => setDisplayRatio(targetRatio));
+      ]).start(({ finished: overflowFinished }) => {
+        if (overflowFinished && targetOverflowProgress > 0) {
+          playOverflowFeedback();
+        }
+        setDisplayRatio(targetRatio);
+      });
+    });
 
     playGainAnimation(200);
-    if (steps >= goal && goal > 0) {
-      playFullPulseAnimation();
-      playProgressHaptic('complete');
-    }
-    if (steps > goal && goal > 0) {
-      playOverflowPulseAnimation();
-    }
     previousSteps.current = steps;
   }, [animatedOverflowProgress, animatedProgress, goal, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
 

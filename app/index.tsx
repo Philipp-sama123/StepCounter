@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { useAuth } from '../src/auth/AuthContext';
@@ -100,7 +100,6 @@ export default function HomeScreen() {
   const handleRefreshSteps = async (): Promise<void> => {
     const message = await refreshSteps();
     showToast(message, 'success');
-    triggerSuccessHaptic();
     await Promise.all([reloadRecentHistory(), reloadGraphHistory(graphRange), reloadRangeTotals()]);
     setProgressResetKey((currentKey) => currentKey + 1);
     setStepReplayKey((currentKey) => currentKey + 1);
@@ -138,10 +137,22 @@ export default function HomeScreen() {
     setStepReplayKey((currentKey) => currentKey + 1);
   }, []);
 
-  const moveSelectedHeroDay = (dayDelta: number): void => {
+  const moveSelectedHeroDay = useCallback((dayDelta: number): void => {
     const nextDate = clampDateToToday(shiftDate(selectedHeroDate, dayDelta));
     void loadSelectedHeroDay(nextDate);
-  };
+  }, [loadSelectedHeroDay, selectedHeroDate]);
+
+  const progressPanResponder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gestureState) =>
+      Math.abs(gestureState.dx) > 18 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.25,
+    onPanResponderRelease: (_, gestureState) => {
+      if (gestureState.dx > 54) {
+        moveSelectedHeroDay(-1);
+      } else if (gestureState.dx < -54) {
+        moveSelectedHeroDay(1);
+      }
+    },
+  }), [moveSelectedHeroDay]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,7 +203,7 @@ export default function HomeScreen() {
       )}
     >
         <RevealView replayKey={stepReplayKey} style={styles.hero}>
-          <View style={styles.dayNavigator}>
+          <View style={styles.dayJumpHeader}>
             <HeroDayButton accessibilityLabel="Previous week" icon="play-skip-back-outline" onPress={() => moveSelectedHeroDay(-7)} />
             <HeroDayButton accessibilityLabel="Previous day" icon="chevron-back-outline" onPress={() => moveSelectedHeroDay(-1)} />
             <View style={styles.heroDateBadge}>
@@ -203,7 +214,9 @@ export default function HomeScreen() {
             <HeroDayButton accessibilityLabel="Next week" disabled={isHeroToday} icon="play-skip-forward-outline" onPress={() => moveSelectedHeroDay(7)} />
           </View>
 
-          <ProgressRing goal={goal} resetAnimationKey={progressResetKey} size={282} steps={heroSteps} />
+          <View style={styles.progressSwipeArea} {...progressPanResponder.panHandlers}>
+            <ProgressRing goal={goal} resetAnimationKey={progressResetKey} size={314} steps={heroSteps} />
+          </View>
           <View style={styles.stepBlock}>
             <AnimatedStepCount replayKey={stepReplayKey} steps={heroSteps} style={styles.stepCount} />
             <Text style={styles.stepLabel}>{isHeroToday ? 'steps today' : 'saved steps'}</Text>
@@ -411,15 +424,16 @@ type HeroDayButtonProps = {
   disabled?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
+  style?: StyleProp<ViewStyle>;
 };
 
-const HeroDayButton = ({ accessibilityLabel, disabled = false, icon, onPress }: HeroDayButtonProps) => (
+const HeroDayButton = ({ accessibilityLabel, disabled = false, icon, onPress, style }: HeroDayButtonProps) => (
   <AnimatedPressable
     accessibilityLabel={accessibilityLabel}
     accessibilityRole="button"
     disabled={disabled}
     onPress={onPress}
-    style={[styles.heroDayButton, disabled ? styles.heroDayButtonDisabled : null]}
+    style={[styles.heroDayButton, style, disabled ? styles.heroDayButtonDisabled : null]}
   >
     <Ionicons color={disabled ? COLORS.stopped : COLORS.text} name={icon} size={17} />
   </AnimatedPressable>
@@ -689,11 +703,17 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingTop: 8,
   },
-  dayNavigator: {
+  dayJumpHeader: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
+    width: '100%',
+  },
+  progressSwipeArea: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 324,
     width: '100%',
   },
   heroDayButton: {

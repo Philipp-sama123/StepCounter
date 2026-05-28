@@ -21,10 +21,12 @@ import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { AppButton } from '../src/components/ui/AppButton';
 import { MetricCard } from '../src/components/ui/MetricCard';
 import { SurfacePanel } from '../src/components/ui/SurfacePanel';
-import { COLORS, DEFAULT_GOAL } from '../src/constants';
+import { COLORS, DEFAULT_GOAL, STATUS_STOPPED_DELAY_MS } from '../src/constants';
 import { syncChallengeSession } from '../src/firebase/stepsSync';
+import { StepDataSource } from '../src/health/types';
 import { publishOwnSharedProfileSnapshot } from '../src/services/sharedProfilePublish';
-import { useStepCounter } from '../src/hooks/useStepCounter';
+import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
+import { useStepCounter, WalkingStatus } from '../src/hooks/useStepCounter';
 import {
     getTodayString,
     readChallengeGoal,
@@ -51,18 +53,21 @@ import { triggerErrorHaptic, triggerSuccessHaptic } from '../src/utils/haptics';
 export default function ChallengeScreen() {
     const [trackingMode, setTrackingMode] = useState<ChallengeTrackingMode>('live');
     const isFocused = useIsFocused();
-    const {
-        debugMessage,
-        isAvailable,
-        isRefreshing,
-        refreshSteps,
-        requestPermissions,
-        sensorLog,
-        source,
-        status,
-        todaySteps,
-        canRefresh,
-    } = useStepCounter(trackingMode, isFocused);
+    const isLiveMode = trackingMode === 'live';
+    const systemStepCounter = useStepCounter('system', isFocused && !isLiveMode);
+    const calculatedStepCounter = useCalculatedStepCounter(isFocused && isLiveMode);
+    const debugMessage = isLiveMode ? calculatedStepCounter.debugMessage : systemStepCounter.debugMessage;
+    const isAvailable = isLiveMode ? calculatedStepCounter.isAvailable : systemStepCounter.isAvailable;
+    const isRefreshing = isLiveMode ? false : systemStepCounter.isRefreshing;
+    const refreshSteps = systemStepCounter.refreshSteps;
+    const requestPermissions = systemStepCounter.requestPermissions;
+    const source: StepDataSource = isLiveMode ? 'live-sensor' : systemStepCounter.source;
+    const status: WalkingStatus = isLiveMode
+        ? getCalculatedWalkingStatus(calculatedStepCounter.detectorDecision, calculatedStepCounter.elapsedMsSinceStep)
+        : systemStepCounter.status;
+    const todaySteps = isLiveMode ? calculatedStepCounter.steps : systemStepCounter.todaySteps;
+    const canRefresh = !isLiveMode && systemStepCounter.canRefresh;
+    const sensorLog = isLiveMode ? getCalculatedSensorLog(calculatedStepCounter.log) : systemStepCounter.sensorLog;
     const { signOutUser, user } = useAuth();
     const [goal, setGoal] = useState(DEFAULT_GOAL);
     const [challengeGoal, setChallengeGoal] = useState(DEFAULT_GOAL);
@@ -122,7 +127,6 @@ export default function ChallengeScreen() {
     const handleRefreshSteps = async (): Promise<void> => {
         const message = await refreshSteps();
         showToast(message);
-        triggerSuccessHaptic();
         setRecentSessions(await readRecentChallengeSessions());
         setProgressResetKey((currentKey) => currentKey + 1);
         setStepReplayKey((currentKey) => currentKey + 1);
@@ -205,7 +209,7 @@ export default function ChallengeScreen() {
     }, [isChallengeActive, isFocused]);
 
     useEffect(() => {
-        if (!isChallengeActive || !isFocused) {
+        if (!isChallengeActive || !isFocused || isLiveMode) {
             setAccelerometerAvailable(null);
             setAccelerometerLog([]);
             return undefined;
@@ -251,10 +255,10 @@ export default function ChallengeScreen() {
             isMounted = false;
             subscription?.remove();
         };
-    }, [isChallengeActive, isFocused]);
+    }, [isChallengeActive, isFocused, isLiveMode]);
 
     useEffect(() => {
-        if (!isChallengeActive || !isFocused) {
+        if (!isChallengeActive || !isFocused || isLiveMode) {
             setGyroscopeAvailable(null);
             setGyroscopeLog([]);
             return undefined;
@@ -301,7 +305,7 @@ export default function ChallengeScreen() {
             isMounted = false;
             gyroscopeSubscription?.remove();
         };
-    }, [isChallengeActive, isFocused]);
+    }, [isChallengeActive, isFocused, isLiveMode]);
 
     useFocusEffect(
         useCallback(() => {
@@ -333,12 +337,14 @@ export default function ChallengeScreen() {
     const sessionPace = isChallengeActive ? Math.round(currentChallengeDelta / sessionMinutes) : 0;
     const dailyChallengeGoalPercent = dailyChallengeGoal > 0 ? Math.min(100, (idleChallengeSteps / dailyChallengeGoal) * 100) : 0;
     const rollingAverages = getRollingAverages({
-        accelerometerLog,
-        gyroscopeLog,
+        accelerometerLog: isLiveMode ? getCalculatedAccelerometerLog(calculatedStepCounter.samples) : accelerometerLog,
+        gyroscopeLog: isLiveMode ? getCalculatedGyroscopeLog(calculatedStepCounter.samples) : gyroscopeLog,
         nowMs: sessionClock,
         sensorLog,
     });
-    const isLiveMode = trackingMode === 'live';
+    const modeHint = isLiveMode
+        ? 'Live mode uses the same calculated detector as Debug: acceleration peaks, rotation filtering, cadence, and confidence.'
+        : 'Health data mode reads the system total. Best for comparing against Google Fit / Health Connect.';
 
     return (
         <AppScreen
@@ -433,9 +439,7 @@ export default function ChallengeScreen() {
                             : `Daily challenge goal ${dailyChallengeGoal.toLocaleString()} · Session goal ${challengeGoal.toLocaleString()}`}
                     </Text>
                     <Text style={styles.modeHint}>
-                        {isLiveMode
-                            ? 'Live mode reacts while you walk. Best for testing immediate sensor behavior.'
-                            : 'Health data mode reads the system total. Best for comparing against Google Fit / Health Connect.'}
+                        {modeHint}
                     </Text>
 
                     {!isChallengeActive ? (
@@ -469,17 +473,21 @@ export default function ChallengeScreen() {
                         <StatusBadge attention={isChallengeActive} status={status} />
                         {!isAvailable && (
                             <View style={styles.permissionContainer}>
-                                <Text style={styles.unsupported}>Permissions required for step tracking</Text>
-                                <AnimatedPressable
-                                    accessibilityLabel="Request pedometer permissions"
-                                    accessibilityRole="button"
-                                    onPress={() => {
-                                        void requestPermissions();
-                                    }}
-                                    style={({ pressed }) => [styles.permissionButton, pressed ? styles.pressed : null]}
-                                >
-                                    <Text style={styles.permissionButtonText}>Request Permissions</Text>
-                                </AnimatedPressable>
+                                <Text style={styles.unsupported}>
+                                    {isLiveMode ? 'Accelerometer unavailable on this device' : 'Permissions required for step tracking'}
+                                </Text>
+                                {!isLiveMode ? (
+                                    <AnimatedPressable
+                                        accessibilityLabel="Request pedometer permissions"
+                                        accessibilityRole="button"
+                                        onPress={() => {
+                                            void requestPermissions();
+                                        }}
+                                        style={({ pressed }) => [styles.permissionButton, pressed ? styles.pressed : null]}
+                                    >
+                                        <Text style={styles.permissionButtonText}>Request Permissions</Text>
+                                    </AnimatedPressable>
+                                ) : null}
                             </View>
                         )}
                     </View>
@@ -617,6 +625,46 @@ export default function ChallengeScreen() {
 
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+
+const getCalculatedWalkingStatus = (decision: string, elapsedMsSinceStep: number | null): WalkingStatus => {
+    if (decision === 'accepted') {
+        return 'walking';
+    }
+
+    if (elapsedMsSinceStep !== null && elapsedMsSinceStep < STATUS_STOPPED_DELAY_MS) {
+        return 'walking';
+    }
+
+    if (decision === 'rejected') {
+        return 'stopped';
+    }
+
+    return 'unknown';
+};
+
+const getCalculatedSensorLog = (log: Array<{ steps: number; timestamp: string }>) =>
+    log.map((entry) => ({
+        delta: 1,
+        rawSteps: entry.steps,
+        timestamp: entry.timestamp,
+        totalSteps: entry.steps,
+    }));
+
+const getCalculatedAccelerometerLog = (samples: Array<{ motionG: number; timestamp: string }>): AccelerometerSample[] =>
+    samples.map((sample) => ({
+        magnitude: sample.motionG,
+        timestamp: sample.timestamp,
+        x: sample.motionG,
+        y: 0,
+        z: 0,
+    }));
+
+const getCalculatedGyroscopeLog = (samples: Array<{ rotationRadPerSecond: number; timestamp: string }>): GenericSensorSample[] =>
+    samples.map((sample) => ({
+        headline: `${formatAxis(sample.rotationRadPerSecond)} rad/s`,
+        line: `rotation ${formatAxis(sample.rotationRadPerSecond)} rad/s`,
+        timestamp: sample.timestamp,
+    }));
 
 type ChallengeHistoryPanelProps = {
     challengeGoal: number;

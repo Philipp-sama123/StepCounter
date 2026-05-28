@@ -24,6 +24,9 @@ export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const COLORS = {
   background: '#111315',
+  backgroundGradientEnd: '#4A525A',
+  backgroundGradientMiddle: '#343A40',
+  backgroundGradientStart: '#252A2E',
   surface: '#1A1D20',
   text: '#F3F7EF',
   mutedText: '#9DA9A0',

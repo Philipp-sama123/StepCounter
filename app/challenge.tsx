@@ -3,7 +3,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
@@ -16,6 +16,7 @@ import { AppScreen } from '../src/components/layout/AppScreen';
 import { HeaderIconButton } from '../src/components/layout/HeaderIconButton';
 import { PageHeader } from '../src/components/layout/PageHeader';
 import { ProgressRing } from '../src/components/ProgressRing';
+import { SegmentedTabs } from '../src/components/SegmentedTabs';
 import { StatusBadge } from '../src/components/StatusBadge';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { AppButton } from '../src/components/ui/AppButton';
@@ -29,9 +30,10 @@ import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter'
 import { useStepCounter, WalkingStatus } from '../src/hooks/useStepCounter';
 import {
     getTodayString,
+    readAllChallengeSessions,
     readChallengeGoal,
     readChallengeSessions,
-    readRecentChallengeSessions,
+    readChallengeSessionsForRecentDays,
     readDailyChallengeGoal,
     readGoal,
     saveChallengeGoal,
@@ -49,6 +51,8 @@ import {
     GenericSensorSample,
 } from '../src/utils/challengeMetrics';
 import { triggerErrorHaptic, triggerSuccessHaptic } from '../src/utils/haptics';
+
+type ChallengeHistoryRange = 'day' | 'week' | 'all';
 
 export default function ChallengeScreen() {
     const [trackingMode, setTrackingMode] = useState<ChallengeTrackingMode>('live');
@@ -73,6 +77,7 @@ export default function ChallengeScreen() {
     const [challengeGoal, setChallengeGoal] = useState(DEFAULT_GOAL);
     const [dailyChallengeGoal, setDailyChallengeGoal] = useState(DEFAULT_GOAL);
     const [recentSessions, setRecentSessions] = useState<Array<ChallengeSession & { date: string }>>([]);
+    const [challengeHistoryRange, setChallengeHistoryRange] = useState<ChallengeHistoryRange>('day');
     const [todayChallengeSteps, setTodayChallengeSteps] = useState(0);
     const [goalModalMode, setGoalModalMode] = useState<'daily-challenge' | 'session-challenge'>('session-challenge');
     const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
@@ -100,7 +105,7 @@ export default function ChallengeScreen() {
                 readChallengeGoal(),
                 readDailyChallengeGoal(),
                 readChallengeSessions(getTodayString()),
-                readRecentChallengeSessions(),
+                readChallengeSessionsForRange(challengeHistoryRange),
             ]);
             setGoal(storedGoal);
             setChallengeGoal(storedChallengeGoal);
@@ -110,7 +115,7 @@ export default function ChallengeScreen() {
         };
 
         void loadGoal();
-    }, []);
+    }, [challengeHistoryRange]);
 
     const handleSaveGoal = async (nextGoal: number): Promise<void> => {
         if (goalModalMode === 'daily-challenge') {
@@ -127,7 +132,7 @@ export default function ChallengeScreen() {
     const handleRefreshSteps = async (): Promise<void> => {
         const message = await refreshSteps();
         showToast(message);
-        setRecentSessions(await readRecentChallengeSessions());
+        setRecentSessions(await readChallengeSessionsForRange(challengeHistoryRange));
         setProgressResetKey((currentKey) => currentKey + 1);
         setStepReplayKey((currentKey) => currentKey + 1);
     };
@@ -312,7 +317,7 @@ export default function ChallengeScreen() {
             const loadTodayChallengeSteps = async (): Promise<void> => {
                 const [todaySessions, storedRecentSessions] = await Promise.all([
                     readChallengeSessions(getTodayString()),
-                    readRecentChallengeSessions(),
+                    readChallengeSessionsForRange(challengeHistoryRange),
                 ]);
                 setTodayChallengeSteps(sumSessionSteps(todaySessions));
                 setRecentSessions(storedRecentSessions);
@@ -321,7 +326,7 @@ export default function ChallengeScreen() {
             void loadTodayChallengeSteps();
             setProgressResetKey((currentKey) => currentKey + 1);
             setStepReplayKey((currentKey) => currentKey + 1);
-        }, []),
+        }, [challengeHistoryRange]),
     );
 
     const hasReachedGoal = todaySteps >= goal;
@@ -550,7 +555,7 @@ export default function ChallengeScreen() {
                                         };
                                         await saveChallengeSession(today, session);
                                         setTodayChallengeSteps((currentSteps) => currentSteps + delta);
-                                        setRecentSessions(await readRecentChallengeSessions());
+                                        setRecentSessions(await readChallengeSessionsForRange(challengeHistoryRange));
                                         setChallengeReward({
                                             durationMs: session.durationMs,
                                             goalPercent: sessionChallengeGoal > 0 ? Math.min(100, (delta / sessionChallengeGoal) * 100) : 0,
@@ -616,6 +621,11 @@ export default function ChallengeScreen() {
 
                 <ChallengeHistoryPanel
                     challengeGoal={challengeGoal}
+                    range={challengeHistoryRange}
+                    onRangeChange={(nextRange) => {
+                        setChallengeHistoryRange(nextRange);
+                        void readChallengeSessionsForRange(nextRange).then(setRecentSessions);
+                    }}
                     sessions={recentSessions}
                 />
 
@@ -625,6 +635,22 @@ export default function ChallengeScreen() {
 
 const sumSessionSteps = (sessions: Array<{ steps: number }>): number =>
     sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+
+const readChallengeSessionsForRange = async (range: ChallengeHistoryRange): Promise<Array<ChallengeSession & { date: string }>> => {
+    if (range === 'day') {
+        const date = getTodayString();
+        const sessions = await readChallengeSessions(date);
+        return sessions
+            .map((session) => ({ ...session, date }))
+            .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
+    }
+
+    if (range === 'week') {
+        return readChallengeSessionsForRecentDays(7);
+    }
+
+    return readAllChallengeSessions();
+};
 
 const getCalculatedWalkingStatus = (decision: string, elapsedMsSinceStep: number | null): WalkingStatus => {
     if (decision === 'accepted') {
@@ -666,38 +692,136 @@ const getCalculatedGyroscopeLog = (samples: Array<{ rotationRadPerSecond: number
         timestamp: sample.timestamp,
     }));
 
+type DailyChallengeTotal = {
+    date: string;
+    sessions: number;
+    steps: number;
+};
+
+const getDailyChallengeTotals = (sessions: Array<ChallengeSession & { date: string }>): DailyChallengeTotal[] => {
+    const totalsByDate = new Map<string, DailyChallengeTotal>();
+
+    sessions.forEach((session) => {
+        const current = totalsByDate.get(session.date) ?? { date: session.date, sessions: 0, steps: 0 };
+        current.sessions += 1;
+        current.steps += Math.max(0, Math.floor(session.steps));
+        totalsByDate.set(session.date, current);
+    });
+
+    return Array.from(totalsByDate.values()).sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime());
+};
+
+const getChallengeHistoryTitle = (range: ChallengeHistoryRange): string => {
+    if (range === 'day') {
+        return "Today's challenges";
+    }
+
+    if (range === 'week') {
+        return 'Weekly challenge history';
+    }
+
+    return 'All challenge history';
+};
+
+const getChallengeHistorySubtitle = (range: ChallengeHistoryRange): string => {
+    if (range === 'day') {
+        return 'Every challenge session saved today.';
+    }
+
+    if (range === 'week') {
+        return 'Challenge sessions from the last seven days.';
+    }
+
+    return 'All locally saved challenge sessions.';
+};
+
+const getRelativeHeight = (steps: number, maxSteps: number): number =>
+    Math.max(5, Math.min(100, (steps / Math.max(1, maxSteps)) * 100));
+
+const formatCompactSteps = (steps: number): string => {
+    if (steps >= 1000) {
+        return `${Math.round(steps / 100) / 10}k`;
+    }
+
+    return String(steps);
+};
+
+const formatChallengeDateLabel = (date: string, range: ChallengeHistoryRange): string => {
+    if (range === 'day') {
+        return 'Today';
+    }
+
+    return new Date(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+};
+
 type ChallengeHistoryPanelProps = {
     challengeGoal: number;
+    onRangeChange: (range: ChallengeHistoryRange) => void;
+    range: ChallengeHistoryRange;
     sessions: Array<ChallengeSession & { date: string }>;
 };
 
-const ChallengeHistoryPanel = ({ challengeGoal, sessions }: ChallengeHistoryPanelProps) => {
-    const visibleSessions = sessions.slice(0, 5);
+const ChallengeHistoryPanel = ({ challengeGoal, onRangeChange, range, sessions }: ChallengeHistoryPanelProps) => {
+    const visibleSessions = sessions;
     const totalSteps = sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
+    const totalDuration = sessions.reduce((total, session) => total + Math.max(0, session.durationMs), 0);
     const bestSession = sessions.reduce<ChallengeHistoryPanelProps['sessions'][number] | null>(
         (best, session) => (best === null || session.steps > best.steps ? session : best),
         null,
     );
+    const dailyTotals = getDailyChallengeTotals(sessions);
+    const maxDailySteps = Math.max(1, ...dailyTotals.map((entry) => entry.steps));
 
     return (
         <SurfacePanel style={styles.historyPanel}>
             <View style={styles.historyHeader}>
                 <View>
-                    <Text style={styles.historyTitle}>Challenge history</Text>
-                    <Text style={styles.historySubtitle}>Recent sessions saved on this device.</Text>
+                    <Text style={styles.historyTitle}>{getChallengeHistoryTitle(range)}</Text>
+                    <Text style={styles.historySubtitle}>{getChallengeHistorySubtitle(range)}</Text>
                 </View>
                 <Text style={styles.historyGoal}>{`${challengeGoal.toLocaleString()} goal`}</Text>
             </View>
+            <SegmentedTabs
+                onChange={onRangeChange}
+                options={[
+                    { icon: 'calendar-outline', label: 'Day', value: 'day' },
+                    { icon: 'stats-chart-outline', label: 'Week', value: 'week' },
+                    { icon: 'albums-outline', label: 'All', value: 'all' },
+                ]}
+                value={range}
+            />
             <View style={styles.historyMetrics}>
                 <MetricCard label="Sessions" style={styles.historyMetricCard} value={sessions.length.toLocaleString()} />
                 <MetricCard label="Steps" style={styles.historyMetricCard} value={totalSteps.toLocaleString()} />
+                <MetricCard label="Time" style={styles.historyMetricCard} value={formatDuration(totalDuration)} />
                 <MetricCard label="Best" style={styles.historyMetricCard} value={bestSession === null ? '0' : bestSession.steps.toLocaleString()} />
+            </View>
+            <View style={styles.challengeGraphPanel}>
+                <View style={styles.challengeGraphHeader}>
+                    <Text style={styles.challengeGraphTitle}>{range === 'day' ? 'Sessions today' : 'Steps by day'}</Text>
+                    <Text style={styles.challengeGraphHint}>{dailyTotals.length === 0 ? 'empty' : `${dailyTotals.length} ${dailyTotals.length === 1 ? 'day' : 'days'}`}</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.challengeGraph}>
+                        {dailyTotals.length === 0 ? (
+                            <View style={styles.emptyGraphBar} />
+                        ) : dailyTotals.map((entry) => (
+                            <View key={entry.date} style={styles.challengeGraphColumn}>
+                                <View style={styles.challengeGraphTrack}>
+                                    <View style={[styles.challengeGraphFill, { height: `${getRelativeHeight(entry.steps, maxDailySteps)}%` }]} />
+                                </View>
+                                <Text style={styles.challengeGraphLabel}>{formatChallengeDateLabel(entry.date, range)}</Text>
+                                <Text style={styles.challengeGraphValue}>{formatCompactSteps(entry.steps)}</Text>
+                            </View>
+                        ))}
+                    </View>
+                </ScrollView>
             </View>
             <View style={styles.historyList}>
                 {visibleSessions.length === 0 ? (
                     <View style={styles.emptyHistory}>
                         <Text style={styles.emptyHistoryTitle}>No challenge sessions yet</Text>
-                        <Text style={styles.emptyHistoryText}>Start and pause a challenge to save your first session.</Text>
+                        <Text style={styles.emptyHistoryText}>{range === 'day' ? 'Start and pause a challenge to save a session today.' : 'Start and pause a challenge to save your first session.'}</Text>
                     </View>
                 ) : visibleSessions.map((session) => (
                     <ChallengeHistoryRow key={`${session.date}-${session.startedAt}`} session={session} />
@@ -920,12 +1044,81 @@ const styles = StyleSheet.create({
     },
     historyMetrics: {
         flexDirection: 'row',
+        flexWrap: 'wrap',
         gap: 8,
     },
     historyMetricCard: {
-        flex: 1,
+        flexGrow: 1,
         minHeight: 72,
+        minWidth: '47%',
         width: undefined,
+    },
+    challengeGraphPanel: {
+        backgroundColor: COLORS.background,
+        borderColor: COLORS.border,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: 10,
+        padding: 12,
+    },
+    challengeGraphHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    challengeGraphTitle: {
+        color: COLORS.text,
+        fontSize: 13,
+        fontWeight: '900',
+    },
+    challengeGraphHint: {
+        color: COLORS.mutedText,
+        fontSize: 11,
+        fontWeight: '800',
+    },
+    challengeGraph: {
+        alignItems: 'flex-end',
+        flexDirection: 'row',
+        gap: 8,
+        minHeight: 134,
+        paddingTop: 8,
+    },
+    challengeGraphColumn: {
+        alignItems: 'center',
+        gap: 6,
+        width: 48,
+    },
+    challengeGraphTrack: {
+        backgroundColor: COLORS.challengeSoft,
+        borderColor: COLORS.challenge,
+        borderRadius: 8,
+        borderWidth: 1,
+        height: 90,
+        justifyContent: 'flex-end',
+        overflow: 'hidden',
+        width: '100%',
+    },
+    challengeGraphFill: {
+        backgroundColor: COLORS.challenge,
+        borderRadius: 7,
+        minHeight: 5,
+        width: '100%',
+    },
+    challengeGraphLabel: {
+        color: COLORS.mutedText,
+        fontSize: 10,
+        fontWeight: '900',
+    },
+    challengeGraphValue: {
+        color: COLORS.challenge,
+        fontSize: 10,
+        fontWeight: '900',
+    },
+    emptyGraphBar: {
+        backgroundColor: COLORS.stoppedSoft,
+        borderRadius: 8,
+        height: 90,
+        width: 48,
     },
     historyList: {
         gap: 10,

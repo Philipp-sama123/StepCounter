@@ -225,9 +225,14 @@ export const readChallengeSessions = async (date: string): Promise<ChallengeSess
 };
 
 export const readRecentChallengeSessions = async (): Promise<Array<ChallengeSession & { date: string }>> => {
+  return readChallengeSessionsForRecentDays(LAST_SEVEN_DAYS);
+};
+
+export const readChallengeSessionsForRecentDays = async (dayCount: number): Promise<Array<ChallengeSession & { date: string }>> => {
+  const safeDayCount = Math.max(1, Math.floor(dayCount));
   const today = new Date(getTodayString());
-  const dates = Array.from({ length: LAST_SEVEN_DAYS }, (_, index) => {
-    const date = new Date(today.getTime() - (LAST_SEVEN_DAYS - 1 - index) * ONE_DAY_MS);
+  const dates = Array.from({ length: safeDayCount }, (_, index) => {
+    const date = new Date(today.getTime() - (safeDayCount - 1 - index) * ONE_DAY_MS);
     return toLocalDateString(date);
   });
 
@@ -239,4 +244,30 @@ export const readRecentChallengeSessions = async (): Promise<Array<ChallengeSess
   return sessionsByDate
     .flatMap(({ date, sessions }) => sessions.map((session) => ({ ...session, date })))
     .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
+};
+
+export const readAllChallengeSessions = async (): Promise<Array<ChallengeSession & { date: string }>> => {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    const challengeKeys = keys
+      .filter((key) => key.startsWith(CHALLENGE_SESSION_KEY_PREFIX))
+      .sort()
+      .reverse();
+    const values = await AsyncStorage.multiGet(challengeKeys);
+
+    return values
+      .flatMap(([key, raw]) => {
+        if (raw === null) {
+          return [];
+        }
+
+        const date = key.replace(CHALLENGE_SESSION_KEY_PREFIX, '');
+        const sessions = JSON.parse(raw) as ChallengeSession[];
+        return sessions.map((session) => ({ ...session, date }));
+      })
+      .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
+  } catch (error) {
+    console.warn('Unable to read all challenge sessions.', error);
+    return [];
+  }
 };

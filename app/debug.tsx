@@ -7,12 +7,14 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { SensorAvatar } from '../src/components/debug/SensorAvatar';
 import { SyncDiagnosticRow } from '../src/components/debug/SyncDiagnosticRow';
 import { AppScreen } from '../src/components/layout/AppScreen';
 import { PageHeader } from '../src/components/layout/PageHeader';
 import { RevealView } from '../src/components/RevealView';
 import { SegmentedTabs } from '../src/components/SegmentedTabs';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
+import { AVATAR_SPRITESHEET, AVATAR_SPRITESHEET_FOLDER } from '../src/config/avatarSprites';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { readTodayStepsFromSystemHealth } from '../src/health/stepsProvider';
 import { StepDataSource } from '../src/health/types';
@@ -38,12 +40,14 @@ type StepReferenceState = {
 };
 
 type DebugView = 'calculated' | 'sensors' | 'sync';
+type CalculatedPanelView = 'avatar' | 'bars';
 
 export default function DebugScreen() {
   const isFocused = useIsFocused();
   const { debugMessage, sensorLog, source, todaySteps } = useStepCounter('live', isFocused);
   const { user } = useAuth();
   const [debugView, setDebugView] = useState<DebugView>('calculated');
+  const [calculatedPanelView, setCalculatedPanelView] = useState<CalculatedPanelView>('avatar');
   const calculatedSteps = useCalculatedStepCounter(isFocused && debugView === 'calculated');
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [isSavingToFirestore, setIsSavingToFirestore] = useState(false);
@@ -250,62 +254,88 @@ export default function DebugScreen() {
             <Text style={styles.sectionText}>
               This counter watches acceleration peaks. A peak is accepted as a step only after a short warmup, when the timing looks walk-like, and when rotation is not too chaotic. It is saved separately from Health Connect.
             </Text>
+            <SegmentedTabs
+              onChange={setCalculatedPanelView}
+              options={[
+                { icon: 'person-outline', label: 'Avatar', value: 'avatar' },
+                { icon: 'bar-chart-outline', label: 'Bars', value: 'bars' },
+              ]}
+              value={calculatedPanelView}
+            />
+            {calculatedPanelView === 'avatar' ? (
+              <>
+                <SensorAvatar
+                  cadenceStepsPerMinute={calculatedSteps.cadenceStepsPerMinute}
+                  confidence={calculatedSteps.confidence}
+                  detectorDecision={calculatedSteps.detectorDecision}
+                  elapsedMsSinceStep={calculatedSteps.elapsedMsSinceStep}
+                  motionG={calculatedSteps.lastMotionG}
+                  spritesheet={AVATAR_SPRITESHEET}
+                />
+                {Object.values(AVATAR_SPRITESHEET.animations).some((animation) => animation.source === null) ? (
+                  <Text style={styles.spriteHint}>
+                    {`Drop idle.png, walk.png, and run.png into ${AVATAR_SPRITESHEET_FOLDER}, then set each source in src/config/avatarSprites.ts.`}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <View style={styles.detectorPanel}>
+                <View style={styles.detectorHeader}>
+                  <Text style={styles.detectorTitle}>Current detector decision</Text>
+                  <Text style={[
+                    styles.detectorPill,
+                    calculatedSteps.detectorDecision === 'accepted' ? styles.detectorPillAccepted : null,
+                  ]}>
+                    {calculatedSteps.detectorDecision}
+                  </Text>
+                </View>
+                <Text style={styles.detectorReason}>{calculatedSteps.detectorReason}</Text>
+                <View style={styles.pipeline}>
+                  <PipelineStep
+                    active={calculatedSteps.sampleCount > 8}
+                    label="1. Warmup"
+                    value={`${Math.min(calculatedSteps.sampleCount, 8)}/8 samples`}
+                  />
+                  <PipelineStep
+                    active={calculatedSteps.lastMotionG > calculatedSteps.motionThresholdG}
+                    label="2. Motion peak"
+                    value={`${formatAxis(calculatedSteps.lastMotionG)}g / ${formatAxis(calculatedSteps.motionThresholdG)}g`}
+                  />
+                  <PipelineStep
+                    active={calculatedSteps.elapsedMsSinceStep === null || calculatedSteps.elapsedMsSinceStep > 2200 || (calculatedSteps.elapsedMsSinceStep >= 260 && calculatedSteps.elapsedMsSinceStep <= 1400)}
+                    label="3. Step timing"
+                    value={calculatedSteps.elapsedMsSinceStep === null ? 'first step' : calculatedSteps.elapsedMsSinceStep > 2200 ? 'new sequence' : `${calculatedSteps.elapsedMsSinceStep}ms`}
+                  />
+                  <PipelineStep
+                    active={calculatedSteps.lastRotationRadPerSecond < 7.5}
+                    label="4. Rotation gate"
+                    value={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
+                  />
+                </View>
+                <View style={styles.liveGraphStack}>
+                  <SignalGraph
+                    goodAbove
+                    label="Motion signal"
+                    limitLabel="threshold"
+                    limitValue={calculatedSteps.motionThresholdG}
+                    samples={calculatedSteps.samples.map((sample) => sample.motionG)}
+                    valueLabel={`${formatAxis(calculatedSteps.lastMotionG)}g`}
+                  />
+                  <SignalGraph
+                    label="Rotation gate"
+                    limitLabel="max 7.5"
+                    limitValue={7.5}
+                    samples={calculatedSteps.samples.map((sample) => sample.rotationRadPerSecond)}
+                    valueLabel={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
+                  />
+                  <TimingGraph samples={calculatedSteps.samples} />
+                </View>
+              </View>
+            )}
             <View style={styles.calculatedSummaryGrid}>
               <ReferenceCard label="Calculated" value={calculatedSteps.steps.toLocaleString()} />
               <ReferenceCard label="Cadence" value={`${calculatedSteps.cadenceStepsPerMinute}/min`} />
               <ReferenceCard label="Confidence" value={`${calculatedSteps.confidence}%`} />
-            </View>
-            <View style={styles.detectorPanel}>
-              <View style={styles.detectorHeader}>
-                <Text style={styles.detectorTitle}>Current detector decision</Text>
-                <Text style={[
-                  styles.detectorPill,
-                  calculatedSteps.detectorDecision === 'accepted' ? styles.detectorPillAccepted : null,
-                ]}>
-                  {calculatedSteps.detectorDecision}
-                </Text>
-              </View>
-              <Text style={styles.detectorReason}>{calculatedSteps.detectorReason}</Text>
-              <View style={styles.pipeline}>
-                <PipelineStep
-                  active={calculatedSteps.sampleCount > 8}
-                  label="1. Warmup"
-                  value={`${Math.min(calculatedSteps.sampleCount, 8)}/8 samples`}
-                />
-                <PipelineStep
-                  active={calculatedSteps.lastMotionG > calculatedSteps.motionThresholdG}
-                  label="2. Motion peak"
-                  value={`${formatAxis(calculatedSteps.lastMotionG)}g / ${formatAxis(calculatedSteps.motionThresholdG)}g`}
-                />
-                <PipelineStep
-                  active={calculatedSteps.elapsedMsSinceStep === null || calculatedSteps.elapsedMsSinceStep > 2200 || (calculatedSteps.elapsedMsSinceStep >= 260 && calculatedSteps.elapsedMsSinceStep <= 1400)}
-                  label="3. Step timing"
-                  value={calculatedSteps.elapsedMsSinceStep === null ? 'first step' : calculatedSteps.elapsedMsSinceStep > 2200 ? 'new sequence' : `${calculatedSteps.elapsedMsSinceStep}ms`}
-                />
-                <PipelineStep
-                  active={calculatedSteps.lastRotationRadPerSecond < 7.5}
-                  label="4. Rotation gate"
-                  value={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
-                />
-              </View>
-              <View style={styles.liveGraphStack}>
-                <SignalGraph
-                  goodAbove
-                  label="Motion signal"
-                  limitLabel="threshold"
-                  limitValue={calculatedSteps.motionThresholdG}
-                  samples={calculatedSteps.samples.map((sample) => sample.motionG)}
-                  valueLabel={`${formatAxis(calculatedSteps.lastMotionG)}g`}
-                />
-                <SignalGraph
-                  label="Rotation gate"
-                  limitLabel="max 7.5"
-                  limitValue={7.5}
-                  samples={calculatedSteps.samples.map((sample) => sample.rotationRadPerSecond)}
-                  valueLabel={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
-                />
-                <TimingGraph samples={calculatedSteps.samples} />
-              </View>
             </View>
             <View style={styles.explainerGrid}>
               <ExplainerCard label="Acceleration" value={`${formatAxis(calculatedSteps.lastAccelerationG)}g`} text="Raw phone movement magnitude. The detector subtracts a moving gravity baseline from this." />
@@ -767,6 +797,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
+  },
+  spriteHint: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    padding: 10,
   },
   consoleHeader: {
     alignItems: 'center',

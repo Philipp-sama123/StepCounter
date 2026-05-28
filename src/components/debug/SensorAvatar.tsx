@@ -1,9 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Animated, Image, ImageSourcePropType, Modal, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { AnimatedPressable } from '../AnimatedPressable';
-import { AvatarAnimationConfig, AvatarAnimationKey, AvatarSpritesheetConfig } from '../../config/avatarSprites';
+import {
+  AVATAR_STORAGE_KEY,
+  AVATAR_VARIANTS,
+  AvatarAnimationConfig,
+  AvatarAnimationKey,
+  AvatarSpritesheetConfig,
+  AvatarVariantKey,
+  DEFAULT_AVATAR_VARIANT_KEY,
+} from '../../config/avatarSprites';
 import { COLORS } from '../../constants';
 
 type SensorAvatarProps = {
@@ -21,12 +30,12 @@ type RingGeometry = {
   strokeDashoffset: Animated.AnimatedInterpolation<string | number>;
 };
 
-const RING_SIZE = 172;
+const RING_SIZE = 212;
 const RING_STROKE = 12;
-const AVATAR_SIZE = 96;
-const FULLSCREEN_RING_SIZE = 308;
+const AVATAR_SIZE = 128;
+const FULLSCREEN_RING_SIZE = 348;
 const FULLSCREEN_RING_STROKE = 18;
-const FULLSCREEN_AVATAR_SIZE = 190;
+const FULLSCREEN_AVATAR_SIZE = 220;
 const STOPPED_AFTER_MS = 2200;
 const RUN_CADENCE = 135;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -45,13 +54,33 @@ export const SensorAvatar = ({
     elapsedMsSinceStep,
     motionG,
   });
-  const animation = spritesheet.animations[animationKey];
+  const [selectedAvatarKey, setSelectedAvatarKey] = useState<AvatarVariantKey>(DEFAULT_AVATAR_VARIANT_KEY);
+  const selectedVariant = AVATAR_VARIANTS.find((variant) => variant.key === selectedAvatarKey);
+  const selectedSpritesheet = selectedVariant?.spritesheet ?? spritesheet;
+  const animation = selectedSpritesheet.animations[animationKey];
   const [frameIndex, setFrameIndex] = useState(0);
   const [isFullscreenVisible, setIsFullscreenVisible] = useState(false);
   const ringProgress = useRef(new Animated.Value(confidence / 100)).current;
   const pulseScale = useRef(new Animated.Value(1)).current;
   const ring = useMemo(() => getRingGeometry(ringProgress, RING_SIZE, RING_STROKE), [ringProgress]);
   const fullscreenRing = useMemo(() => getRingGeometry(ringProgress, FULLSCREEN_RING_SIZE, FULLSCREEN_RING_STROKE), [ringProgress]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSelectedAvatar = async (): Promise<void> => {
+      const storedKey = await AsyncStorage.getItem(AVATAR_STORAGE_KEY);
+      if (isMounted && isAvatarVariantKey(storedKey)) {
+        setSelectedAvatarKey(storedKey);
+      }
+    };
+
+    void loadSelectedAvatar();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     setFrameIndex(0);
@@ -100,16 +129,16 @@ export const SensorAvatar = ({
             <Text style={styles.title}>Live avatar</Text>
             <Text style={styles.subtitle}>Tap to open the bright fullscreen stage.</Text>
           </View>
-          <Text style={[styles.statePill, styles[`${animationKey}Pill`]]}>{animationKey}</Text>
+          <Text style={[styles.statePill, styles[`${animationKey}Pill`]]}>{selectedVariant?.label ?? 'Avatar'}</Text>
         </View>
 
         <AvatarStage
           animation={animation}
           animationKey={animationKey}
           avatarSize={AVATAR_SIZE}
-          frameHeight={spritesheet.frameHeight}
+          frameHeight={selectedSpritesheet.frameHeight}
           frameIndex={frameIndex}
-          frameWidth={spritesheet.frameWidth}
+          frameWidth={selectedSpritesheet.frameWidth}
           pulseScale={pulseScale}
           ring={ring}
           ringSize={RING_SIZE}
@@ -128,8 +157,8 @@ export const SensorAvatar = ({
           <View style={styles.fullscreenStage}>
             <View style={styles.fullscreenHeader}>
               <View>
-                <Text style={styles.fullscreenTitle}>Live avatar</Text>
-                <Text style={styles.fullscreenSubtitle}>Sensor state follows the calculated live detector.</Text>
+              <Text style={styles.fullscreenTitle}>Live avatar</Text>
+                <Text style={styles.fullscreenSubtitle}>Choose an avatar and watch the live detector state.</Text>
               </View>
               <AnimatedPressable
                 accessibilityLabel="Close fullscreen avatar"
@@ -146,9 +175,9 @@ export const SensorAvatar = ({
                 animation={animation}
                 animationKey={animationKey}
                 avatarSize={FULLSCREEN_AVATAR_SIZE}
-                frameHeight={spritesheet.frameHeight}
+                frameHeight={selectedSpritesheet.frameHeight}
                 frameIndex={frameIndex}
-                frameWidth={spritesheet.frameWidth}
+                frameWidth={selectedSpritesheet.frameWidth}
                 pulseScale={pulseScale}
                 ring={fullscreenRing}
                 ringSize={FULLSCREEN_RING_SIZE}
@@ -161,6 +190,26 @@ export const SensorAvatar = ({
               <AvatarMetric label="Confidence" value={`${confidence}%`} />
               <AvatarMetric label="Motion" value={`${motionG.toFixed(2)}g`} />
               <AvatarMetric label="State" value={animationKey} />
+            </View>
+            <View style={styles.avatarPicker}>
+              {AVATAR_VARIANTS.map((variant) => {
+                const isSelected = variant.key === selectedAvatarKey;
+
+                return (
+                  <AnimatedPressable
+                    accessibilityLabel={`Select ${variant.label}`}
+                    accessibilityRole="button"
+                    key={variant.key}
+                    onPress={() => {
+                      setSelectedAvatarKey(variant.key);
+                      void AsyncStorage.setItem(AVATAR_STORAGE_KEY, variant.key);
+                    }}
+                    style={[styles.avatarOption, isSelected ? styles.avatarOptionSelected : null]}
+                  >
+                    <Text style={[styles.avatarOptionText, isSelected ? styles.avatarOptionTextSelected : null]}>{variant.label}</Text>
+                  </AnimatedPressable>
+                );
+              })}
             </View>
           </View>
         </View>
@@ -196,6 +245,19 @@ const AvatarStage = ({
 }: AvatarStageProps) => (
   <View style={[styles.stage, { minHeight: ringSize }]}>
     <Svg height={ringSize} style={styles.progressRing} width={ringSize}>
+      <Defs>
+        <LinearGradient id={`avatarCircleGradient-${ringSize}`} x1="0" x2="1" y1="0" y2="1">
+          <Stop offset="0" stopColor="#FFFFFF" />
+          <Stop offset="0.58" stopColor="#EEF1F3" />
+          <Stop offset="1" stopColor="#DDE2E6" />
+        </LinearGradient>
+      </Defs>
+      <Circle
+        cx={ringSize / 2}
+        cy={ringSize / 2}
+        fill={`url(#avatarCircleGradient-${ringSize})`}
+        r={ring.radius - ringStroke}
+      />
       <Circle
         cx={ringSize / 2}
         cy={ringSize / 2}
@@ -307,6 +369,9 @@ const getAvatarAnimationKey = ({
 
   return 'walk';
 };
+
+const isAvatarVariantKey = (value: string | null): value is AvatarVariantKey =>
+  AVATAR_VARIANTS.some((variant) => variant.key === value);
 
 const styles = StyleSheet.create({
   panel: {
@@ -460,5 +525,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  avatarPicker: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  avatarOption: {
+    backgroundColor: '#E8ECEF',
+    borderColor: '#D4DADF',
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 40,
+    minWidth: 82,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  avatarOptionSelected: {
+    backgroundColor: COLORS.challenge,
+    borderColor: COLORS.challenge,
+  },
+  avatarOptionText: {
+    color: COLORS.ink,
+    fontSize: 12,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  avatarOptionTextSelected: {
+    color: COLORS.onDanger,
   },
 });

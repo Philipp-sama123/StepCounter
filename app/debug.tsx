@@ -268,9 +268,11 @@ export default function DebugScreen() {
                   cadenceStepsPerMinute={calculatedSteps.cadenceStepsPerMinute}
                   confidence={calculatedSteps.confidence}
                   detectorDecision={calculatedSteps.detectorDecision}
+                  detectorReason={calculatedSteps.detectorReason}
                   elapsedMsSinceStep={calculatedSteps.elapsedMsSinceStep}
                   motionG={calculatedSteps.lastMotionG}
                   spritesheet={AVATAR_SPRITESHEET}
+                  userId={user?.uid ?? null}
                 />
                 {Object.values(AVATAR_SPRITESHEET.animations).some((animation) => animation.source === null) ? (
                   <Text style={styles.spriteHint}>
@@ -290,6 +292,10 @@ export default function DebugScreen() {
                   </Text>
                 </View>
                 <Text style={styles.detectorReason}>{calculatedSteps.detectorReason}</Text>
+                <View style={styles.sensorFlagRow}>
+                  <SensorFlag active={calculatedSteps.isTimingTooFast} label="Too fast" />
+                  <SensorFlag active={calculatedSteps.isRotationTooHigh} label="Too much rotation" />
+                </View>
                 <View style={styles.pipeline}>
                   <PipelineStep
                     active={calculatedSteps.sampleCount > 8}
@@ -461,6 +467,12 @@ const PipelineStep = ({ active, label, value }: { active: boolean; label: string
       <Text style={styles.pipelineLabel}>{label}</Text>
       <Text style={styles.pipelineValue}>{value}</Text>
     </View>
+  </View>
+);
+
+const SensorFlag = ({ active, label }: { active: boolean; label: string }) => (
+  <View style={[styles.sensorFlag, active ? styles.sensorFlagActive : null]}>
+    <Text style={[styles.sensorFlagText, active ? styles.sensorFlagTextActive : null]}>{label}</Text>
   </View>
 );
 
@@ -888,6 +900,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     lineHeight: 17,
+  },
+  sensorFlagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sensorFlag: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  sensorFlagActive: {
+    backgroundColor: COLORS.danger,
+    borderColor: COLORS.danger,
+  },
+  sensorFlagText: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  sensorFlagTextActive: {
+    color: COLORS.onDanger,
   },
   pipeline: {
     gap: 8,

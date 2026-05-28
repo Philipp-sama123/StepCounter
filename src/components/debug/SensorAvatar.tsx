@@ -14,14 +14,17 @@ import {
   DEFAULT_AVATAR_VARIANT_KEY,
 } from '../../config/avatarSprites';
 import { COLORS } from '../../constants';
+import { readAvatarPreferenceFromFirestore, saveAvatarPreferenceToFirestore } from '../../firebase/avatarPreference';
 
 type SensorAvatarProps = {
   cadenceStepsPerMinute: number;
   confidence: number;
   detectorDecision: string;
+  detectorReason: string;
   elapsedMsSinceStep: number | null;
   motionG: number;
   spritesheet: AvatarSpritesheetConfig;
+  userId: string | null;
 };
 
 type RingGeometry = {
@@ -30,30 +33,47 @@ type RingGeometry = {
   strokeDashoffset: Animated.AnimatedInterpolation<string | number>;
 };
 
-const RING_SIZE = 212;
-const RING_STROKE = 12;
-const AVATAR_SIZE = 128;
-const FULLSCREEN_RING_SIZE = 348;
-const FULLSCREEN_RING_STROKE = 18;
-const FULLSCREEN_AVATAR_SIZE = 220;
+const RING_SIZE = 256;
+const RING_STROKE = 14;
+const AVATAR_SIZE = 160;
+const FULLSCREEN_RING_SIZE = 404;
+const FULLSCREEN_RING_STROKE = 20;
+const FULLSCREEN_AVATAR_SIZE = 256;
 const STOPPED_AFTER_MS = 2200;
-const RUN_CADENCE = 135;
+const WALK_HOLD_MS = 2000;
+const RUN_CADENCE = 155;
+const RUN_MOTION_G = 0.38;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export const SensorAvatar = ({
   cadenceStepsPerMinute,
   confidence,
   detectorDecision,
+  detectorReason,
   elapsedMsSinceStep,
   motionG,
   spritesheet,
+  userId,
 }: SensorAvatarProps) => {
-  const animationKey = getAvatarAnimationKey({
+  const [lastAcceptedAt, setLastAcceptedAt] = useState(0);
+  const nowMs = Date.now();
+
+  useEffect(() => {
+    if (detectorDecision === 'accepted') {
+      setLastAcceptedAt(Date.now());
+    }
+  }, [detectorDecision, elapsedMsSinceStep]);
+
+  const isWalkingHeld = detectorDecision !== 'accepted' && lastAcceptedAt > 0 && nowMs - lastAcceptedAt < WALK_HOLD_MS;
+  const displayDecision = isWalkingHeld ? 'accepted' : detectorDecision;
+  const displayReason = isWalkingHeld ? 'Recently accepted a step.' : detectorReason;
+  const desiredAnimationKey = getAvatarAnimationKey({
     cadenceStepsPerMinute,
-    detectorDecision,
+    detectorDecision: displayDecision,
     elapsedMsSinceStep,
     motionG,
   });
+  const animationKey = desiredAnimationKey;
   const [selectedAvatarKey, setSelectedAvatarKey] = useState<AvatarVariantKey>(DEFAULT_AVATAR_VARIANT_KEY);
   const selectedVariant = AVATAR_VARIANTS.find((variant) => variant.key === selectedAvatarKey);
   const selectedSpritesheet = selectedVariant?.spritesheet ?? spritesheet;
@@ -64,14 +84,21 @@ export const SensorAvatar = ({
   const pulseScale = useRef(new Animated.Value(1)).current;
   const ring = useMemo(() => getRingGeometry(ringProgress, RING_SIZE, RING_STROKE), [ringProgress]);
   const fullscreenRing = useMemo(() => getRingGeometry(ringProgress, FULLSCREEN_RING_SIZE, FULLSCREEN_RING_STROKE), [ringProgress]);
+  const statusLabel = getDetectorStatusLabel(displayDecision, displayReason);
 
   useEffect(() => {
     let isMounted = true;
 
     const loadSelectedAvatar = async (): Promise<void> => {
-      const storedKey = await AsyncStorage.getItem(AVATAR_STORAGE_KEY);
-      if (isMounted && isAvatarVariantKey(storedKey)) {
-        setSelectedAvatarKey(storedKey);
+      const [storedKey, remoteKey] = await Promise.all([
+        AsyncStorage.getItem(AVATAR_STORAGE_KEY),
+        userId === null ? Promise.resolve(null) : readAvatarPreferenceFromFirestore(userId),
+      ]);
+      const nextKey = remoteKey ?? (isAvatarVariantKey(storedKey) ? storedKey : null);
+
+      if (isMounted && nextKey !== null) {
+        setSelectedAvatarKey(nextKey);
+        await AsyncStorage.setItem(AVATAR_STORAGE_KEY, nextKey);
       }
     };
 
@@ -80,7 +107,7 @@ export const SensorAvatar = ({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     setFrameIndex(0);
@@ -91,6 +118,10 @@ export const SensorAvatar = ({
 
     return () => clearInterval(timer);
   }, [animation.frameCount, animation.fps, animationKey]);
+
+  useEffect(() => {
+    setFrameIndex(0);
+  }, [animationKey, selectedAvatarKey]);
 
   useEffect(() => {
     Animated.parallel([
@@ -127,9 +158,9 @@ export const SensorAvatar = ({
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Live avatar</Text>
-            <Text style={styles.subtitle}>Tap to open the bright fullscreen stage.</Text>
+            <Text style={styles.subtitle}>{`${selectedVariant?.label ?? 'Avatar'} · ${statusLabel}`}</Text>
           </View>
-          <Text style={[styles.statePill, styles[`${animationKey}Pill`]]}>{selectedVariant?.label ?? 'Avatar'}</Text>
+          <Text style={[styles.statePill, styles[`${animationKey}Pill`]]}>{animationKey}</Text>
         </View>
 
         <AvatarStage
@@ -157,8 +188,8 @@ export const SensorAvatar = ({
           <View style={styles.fullscreenStage}>
             <View style={styles.fullscreenHeader}>
               <View>
-              <Text style={styles.fullscreenTitle}>Live avatar</Text>
-                <Text style={styles.fullscreenSubtitle}>Choose an avatar and watch the live detector state.</Text>
+                <Text style={styles.fullscreenTitle}>Live avatar</Text>
+                <Text style={styles.fullscreenSubtitle}>{`${selectedVariant?.label ?? 'Avatar'} · ${statusLabel}`}</Text>
               </View>
               <AnimatedPressable
                 accessibilityLabel="Close fullscreen avatar"
@@ -190,7 +221,9 @@ export const SensorAvatar = ({
               <AvatarMetric label="Confidence" value={`${confidence}%`} />
               <AvatarMetric label="Motion" value={`${motionG.toFixed(2)}g`} />
               <AvatarMetric label="State" value={animationKey} />
+              <AvatarMetric label="Status" value={statusLabel} />
             </View>
+            <Text style={styles.fullscreenReason}>{displayReason}</Text>
             <View style={styles.avatarPicker}>
               {AVATAR_VARIANTS.map((variant) => {
                 const isSelected = variant.key === selectedAvatarKey;
@@ -203,6 +236,9 @@ export const SensorAvatar = ({
                     onPress={() => {
                       setSelectedAvatarKey(variant.key);
                       void AsyncStorage.setItem(AVATAR_STORAGE_KEY, variant.key);
+                      if (userId !== null) {
+                        void saveAvatarPreferenceToFirestore(userId, variant.key);
+                      }
                     }}
                     style={[styles.avatarOption, isSelected ? styles.avatarOptionSelected : null]}
                   >
@@ -307,13 +343,16 @@ type SpriteFrameProps = {
 const SpriteFrame = ({ animation, avatarSize, frameHeight, frameIndex, frameWidth, source }: SpriteFrameProps) => (
   <View style={[styles.spriteViewport, { height: avatarSize, width: avatarSize }]}>
     <Image
+      fadeDuration={0}
       resizeMode="stretch"
+      resizeMethod="resize"
       source={source}
       style={{
         height: (avatarSize / frameHeight) * frameHeight,
+        imageRendering: 'pixelated',
         transform: [{ translateX: -frameIndex * avatarSize }],
         width: (avatarSize / frameWidth) * frameWidth * animation.frameCount,
-      }}
+      } as object}
     />
   </View>
 );
@@ -346,6 +385,30 @@ const getRingGeometry = (ringProgress: Animated.Value, ringSize: number, ringStr
   };
 };
 
+const getDetectorStatusLabel = (decision: string, reason: string): string => {
+  if (decision === 'accepted') {
+    return 'walking';
+  }
+
+  if (decision === 'waiting') {
+    return 'warming up';
+  }
+
+  if (reason.includes('too fast')) {
+    return 'too fast';
+  }
+
+  if (reason.includes('rotation')) {
+    return 'too much rotation';
+  }
+
+  if (reason.includes('threshold')) {
+    return 'listening';
+  }
+
+  return decision;
+};
+
 const getAvatarAnimationKey = ({
   cadenceStepsPerMinute,
   detectorDecision,
@@ -359,11 +422,11 @@ const getAvatarAnimationKey = ({
 }): AvatarAnimationKey => {
   const isRecentlyMoving = detectorDecision === 'accepted' || (elapsedMsSinceStep !== null && elapsedMsSinceStep < STOPPED_AFTER_MS);
 
-  if (!isRecentlyMoving || cadenceStepsPerMinute <= 0) {
+  if (!isRecentlyMoving) {
     return 'idle';
   }
 
-  if (cadenceStepsPerMinute >= RUN_CADENCE || motionG > 0.28) {
+  if (cadenceStepsPerMinute >= RUN_CADENCE && motionG >= RUN_MOTION_G) {
     return 'run';
   }
 
@@ -525,6 +588,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  fullscreenReason: {
+    color: '#66705F',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 17,
   },
   avatarPicker: {
     flexDirection: 'row',

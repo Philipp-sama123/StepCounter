@@ -23,6 +23,7 @@ export type AvatarVariantConfig = {
 
 export const AVATAR_SPRITESHEET_FOLDER = 'assets/sprites/avatar';
 export const AVATAR_STORAGE_KEY = 'debug:selected-avatar';
+const AVATAR_ANIMATION_FPS = 8;
 
 const createCatSpritesheet = ({
   idle,
@@ -38,17 +39,17 @@ const createCatSpritesheet = ({
   animations: {
     idle: {
       frameCount: 8,
-      fps: 5,
+      fps: AVATAR_ANIMATION_FPS,
       source: idle,
     },
     walk: {
       frameCount: 8,
-      fps: 9,
+      fps: AVATAR_ANIMATION_FPS,
       source: walk,
     },
     run: {
       frameCount: 4,
-      fps: 12,
+      fps: AVATAR_ANIMATION_FPS,
       source: run,
     },
   },

@@ -39,6 +39,8 @@ export type UseCalculatedStepCounterResult = {
   distanceKm: number;
   elapsedMsSinceStep: number | null;
   history: StepHistoryEntry[];
+  isRotationTooHigh: boolean;
+  isTimingTooFast: boolean;
   isAvailable: boolean;
   lastAccelerationG: number;
   lastMotionG: number;
@@ -72,6 +74,8 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
   const [lastMotionG, setLastMotionG] = useState(0);
   const [motionThresholdG, setMotionThresholdG] = useState(0);
   const [elapsedMsSinceStep, setElapsedMsSinceStep] = useState<number | null>(null);
+  const [isRotationTooHigh, setIsRotationTooHigh] = useState(false);
+  const [isTimingTooFast, setIsTimingTooFast] = useState(false);
   const [detectorDecision, setDetectorDecision] = useState<DetectorDecision>('waiting');
   const [detectorReason, setDetectorReason] = useState('Waiting for enough sensor samples.');
   const [sampleCount, setSampleCount] = useState(0);
@@ -178,6 +182,8 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
         ? canStartNewSequence || (elapsedMs >= MIN_STEP_INTERVAL_MS && elapsedMs <= MAX_STEP_INTERVAL_MS)
         : sampleCountRef.current > WARMUP_SAMPLE_COUNT;
       const hasEnoughStillness = rotationMagnitude < 7.5;
+      const timingTooFast = hasPreviousStep && !canStartNewSequence && elapsedMs < MIN_STEP_INTERVAL_MS;
+      const rotationTooHigh = !hasEnoughStillness;
       const rejectReason = getRejectReason({
         hasEnoughStillness,
         hasHumanTiming,
@@ -189,6 +195,8 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
       setLastMotionG(motion);
       setMotionThresholdG(adaptiveThreshold);
       setElapsedMsSinceStep(hasPreviousStep ? elapsedMs : null);
+      setIsTimingTooFast(timingTooFast);
+      setIsRotationTooHigh(rotationTooHigh);
       setSampleCount(sampleCountRef.current);
       setSamples((currentSamples) => [...currentSamples, {
         elapsedMsSinceStep: hasPreviousStep ? elapsedMs : null,
@@ -261,6 +269,8 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
     distanceKm,
     elapsedMsSinceStep,
     history,
+    isRotationTooHigh,
+    isTimingTooFast,
     isAvailable,
     lastAccelerationG,
     lastMotionG,

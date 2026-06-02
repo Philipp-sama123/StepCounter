@@ -52,12 +52,25 @@ export type UseCalculatedStepCounterResult = {
   steps: number;
 };
 
-const ACCELEROMETER_INTERVAL_MS = 80;
-const GYROSCOPE_INTERVAL_MS = 120;
-const MIN_STEP_INTERVAL_MS = 260;
-const MAX_STEP_INTERVAL_MS = 1400;
-const SEQUENCE_RESET_INTERVAL_MS = 2200;
-const WARMUP_SAMPLE_COUNT = 8;
+export const CALCULATED_STEP_DETECTOR_LIMITS = {
+  accelerometerIntervalMs: 80,
+  gyroscopeIntervalMs: 120,
+  maxStepIntervalMs: 1400,
+  minStepIntervalMs: 260,
+  rotationLimitRadPerSecond: 7.5,
+  sequenceResetIntervalMs: 2200,
+  warmupSampleCount: 8,
+} as const;
+
+const {
+  accelerometerIntervalMs: ACCELEROMETER_INTERVAL_MS,
+  gyroscopeIntervalMs: GYROSCOPE_INTERVAL_MS,
+  maxStepIntervalMs: MAX_STEP_INTERVAL_MS,
+  minStepIntervalMs: MIN_STEP_INTERVAL_MS,
+  rotationLimitRadPerSecond: ROTATION_LIMIT_RAD_PER_SECOND,
+  sequenceResetIntervalMs: SEQUENCE_RESET_INTERVAL_MS,
+  warmupSampleCount: WARMUP_SAMPLE_COUNT,
+} = CALCULATED_STEP_DETECTOR_LIMITS;
 const HISTORY_DAYS = 14;
 
 export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCounterResult => {
@@ -181,7 +194,7 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
       const hasHumanTiming = hasPreviousStep
         ? canStartNewSequence || (elapsedMs >= MIN_STEP_INTERVAL_MS && elapsedMs <= MAX_STEP_INTERVAL_MS)
         : sampleCountRef.current > WARMUP_SAMPLE_COUNT;
-      const hasEnoughStillness = rotationMagnitude < 7.5;
+      const hasEnoughStillness = rotationMagnitude < ROTATION_LIMIT_RAD_PER_SECOND;
       const timingTooFast = hasPreviousStep && !canStartNewSequence && elapsedMs < MIN_STEP_INTERVAL_MS;
       const rotationTooHigh = !hasEnoughStillness;
       const rejectReason = getRejectReason({

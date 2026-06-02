@@ -291,12 +291,13 @@ export const ProgressRing = ({
       <Svg height={size} style={styles.svg} width={size}>
         <Defs>
           <LinearGradient id="ringProgressGradient" x1="0" x2="1" y1="0" y2="1">
-            <Stop offset="0" stopColor={COLORS.action} />
-            <Stop offset="1" stopColor={COLORS.challenge} />
+            <Stop offset="0" stopColor={COLORS.avatarGradientStart} />
+            <Stop offset="0.58" stopColor={COLORS.avatarGradientMiddle} />
+            <Stop offset="1" stopColor={COLORS.avatarGradientEnd} />
           </LinearGradient>
           <LinearGradient id="ringOverflowGradient" x1="0" x2="1" y1="0" y2="1">
-            <Stop offset="0" stopColor={COLORS.challenge} />
-            <Stop offset="1" stopColor={COLORS.danger} />
+            <Stop offset="0" stopColor={COLORS.progressOverflowStart} />
+            <Stop offset="1" stopColor={COLORS.progressOverflowEnd} />
           </LinearGradient>
         </Defs>
         <Circle
@@ -324,8 +325,8 @@ export const ProgressRing = ({
           <Svg height={size} style={styles.svg} width={size}>
             <Defs>
               <LinearGradient id="ringOverflowGradientLayer" x1="0" x2="1" y1="0" y2="1">
-                <Stop offset="0" stopColor={COLORS.challenge} />
-                <Stop offset="1" stopColor={COLORS.danger} />
+                <Stop offset="0" stopColor={COLORS.progressOverflowStart} />
+                <Stop offset="1" stopColor={COLORS.progressOverflowEnd} />
               </LinearGradient>
             </Defs>
             <AnimatedCircle
@@ -417,7 +418,7 @@ const styles = StyleSheet.create({
   },
   overflowPulse: {
     ...StyleSheet.absoluteFillObject,
-    borderColor: COLORS.danger,
+    borderColor: COLORS.progressOverflowStart,
     borderWidth: 5,
   },
   svg: {
@@ -452,7 +453,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   overflowCaption: {
-    color: COLORS.challengeText,
+    color: COLORS.progressOverflowStart,
     fontSize: 13,
     fontWeight: '800',
   },

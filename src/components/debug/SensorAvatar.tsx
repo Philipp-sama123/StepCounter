@@ -212,9 +212,9 @@ const AvatarStage = ({
     <Svg height={ringSize} style={styles.progressRing} width={ringSize}>
       <Defs>
         <LinearGradient id={`avatarCircleGradient-${ringSize}`} x1="0" x2="1" y1="0" y2="1">
-          <Stop offset="0" stopColor="#FFFFFF" />
-          <Stop offset="0.58" stopColor="#EEF1F3" />
-          <Stop offset="1" stopColor="#DDE2E6" />
+          <Stop offset="0" stopColor={COLORS.avatarGradientStart} />
+          <Stop offset="0.58" stopColor={COLORS.avatarGradientMiddle} />
+          <Stop offset="1" stopColor={COLORS.avatarGradientEnd} />
         </LinearGradient>
       </Defs>
       <Circle

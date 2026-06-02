@@ -87,9 +87,9 @@ export const DashboardAvatar = ({ state, userId }: DashboardAvatarProps) => {
         <Svg height={RING_SIZE} style={styles.ring} width={RING_SIZE}>
           <Defs>
             <LinearGradient id="dashboardAvatarCircleGradient" x1="0" x2="1" y1="0" y2="1">
-              <Stop offset="0" stopColor="#FFFFFF" />
-              <Stop offset="0.6" stopColor="#EEF1F3" />
-              <Stop offset="1" stopColor="#DDE2E6" />
+              <Stop offset="0" stopColor={COLORS.avatarGradientStart} />
+              <Stop offset="0.6" stopColor={COLORS.avatarGradientMiddle} />
+              <Stop offset="1" stopColor={COLORS.avatarGradientEnd} />
             </LinearGradient>
           </Defs>
           <Circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} fill="url(#dashboardAvatarCircleGradient)" r={(RING_SIZE - RING_STROKE * 3) / 2} />

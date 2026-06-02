@@ -592,6 +592,7 @@ const DayDetailModal = ({ day, goal, onClose, profile, todayString }: DayDetailM
   const progressPercent = formatPercent(progress);
   const remaining = Math.max(0, goal - day.steps);
   const calories = estimateWalkingCalories(day.steps, profile);
+  const recapMessage = getDailyRecapMessage(progress, remaining);
 
   return (
     <Modal
@@ -604,16 +605,33 @@ const DayDetailModal = ({ day, goal, onClose, profile, todayString }: DayDetailM
       <View style={styles.modalWrap}>
         <View style={styles.modalCard}>
           <View style={styles.modalDateHeader}>
-            <Text style={styles.modalEyebrow}>{day.date === todayString ? 'Today' : getFullWeekday(day.date)}</Text>
-            <Text style={styles.modalTitle}>{formatDisplayDate(day.date)}</Text>
+            <View style={styles.modalDateCopy}>
+              <Text style={styles.modalEyebrow}>{day.date === todayString ? 'Today' : getFullWeekday(day.date)}</Text>
+              <Text style={styles.modalTitle}>{formatDisplayDate(day.date)}</Text>
+            </View>
+            <AnimatedPressable accessibilityLabel="Close day details" accessibilityRole="button" onPress={onClose} style={styles.modalCloseIcon}>
+              <Ionicons color={COLORS.onAccent} name="close-outline" size={22} />
+            </AnimatedPressable>
+          </View>
+          <View style={styles.modalHeroStat}>
+            <View style={styles.modalHeroIcon}>
+              <Ionicons color={COLORS.progressOverflowStart} name="footsteps-outline" size={28} />
+            </View>
+            <View style={styles.modalHeroCopy}>
+              <Text style={styles.modalHeroValue}>{day.steps.toLocaleString()}</Text>
+              <Text style={styles.modalHeroLabel}>steps logged</Text>
+            </View>
           </View>
           <ModalProgressBar progress={progress} replayKey={`${day.date}-${animationKey}`} />
+          <View style={styles.modalMotivation}>
+            <Ionicons color={progress >= 1 ? COLORS.progressOverflowStart : COLORS.primary} name={progress >= 1 ? 'trophy-outline' : 'leaf-outline'} size={18} />
+            <Text style={styles.modalMotivationText}>{recapMessage}</Text>
+          </View>
           <View style={styles.modalRows}>
-            <DetailRow label="Steps" value={day.steps.toLocaleString()} />
-            <DetailRow label="Goal" value={goal.toLocaleString()} />
-            <DetailRow label="Progress" value={progressPercent} />
-            <DetailRow label="Remaining" value={remaining === 0 ? 'Done' : remaining.toLocaleString()} />
-            <DetailRow label="Burned" value={calories > 0 ? `${calories.toLocaleString()} kcal` : 'Add profile weight'} />
+            <DetailRow icon="flag-outline" label="Goal" value={goal.toLocaleString()} />
+            <DetailRow icon="sparkles-outline" label="Progress" value={progressPercent} />
+            <DetailRow icon="checkmark-circle-outline" label="Remaining" value={remaining === 0 ? 'Done' : remaining.toLocaleString()} />
+            <DetailRow icon="flame-outline" label="Burned" value={calories > 0 ? `${calories.toLocaleString()} kcal` : 'Add profile weight'} />
           </View>
           <AnimatedPressable accessibilityRole="button" onPress={onClose} style={styles.modalButton}>
             <Text style={styles.modalButtonText}>Close</Text>
@@ -689,21 +707,44 @@ const ModalProgressBar = ({ progress, replayKey }: ModalProgressBarProps) => {
       <Animated.View style={[styles.modalProgressOuter, { transform: [{ scale: rewardPulse }] }]}>
         <View style={styles.modalProgressTrack}>
           <Animated.View style={[styles.modalProgressFill, { width }]}>
-            <ProgressFillGradient gradientId="modalBaseProgressGradient" endColor={COLORS.challenge} startColor={COLORS.action} />
+            <ProgressFillGradient gradientId="modalBaseProgressGradient" endColor={COLORS.progressOverflowEnd} startColor={COLORS.progressOverflowStart} />
           </Animated.View>
         </View>
         {progress > 1 ? (
           <Animated.View style={[styles.modalProgressOverflowFill, { width: overflowWidth }]}>
-            <ProgressFillGradient gradientId="modalOverflowProgressGradient" endColor={COLORS.danger} startColor={COLORS.challenge} />
+            <ProgressFillGradient gradientId="modalOverflowProgressGradient" endColor={COLORS.progressDangerEnd} startColor={COLORS.progressDangerStart} />
           </Animated.View>
         ) : null}
       </Animated.View>
-      <Text style={styles.modalProgressText}>{`${formatPercent(progress)} of daily goal`}</Text>
+      <View style={styles.modalProgressMeta}>
+        <Text style={styles.modalProgressLabel}>Daily goal</Text>
+        <Text style={styles.modalProgressText}>{formatPercent(progress)}</Text>
+      </View>
     </View>
   );
 };
 
 const formatPercent = (ratio: number): string => `${(ratio * 100).toFixed(2)}%`;
+
+const getDailyRecapMessage = (progress: number, remaining: number): string => {
+  if (progress >= 1.1) {
+    return 'You pushed past the goal. That extra lap counts.';
+  }
+
+  if (progress >= 1) {
+    return 'Goal reached. Strong, clean day.';
+  }
+
+  if (progress >= 0.75) {
+    return `${remaining.toLocaleString()} steps left. You were right there.`;
+  }
+
+  if (progress >= 0.35) {
+    return 'A solid base day. Keep the rhythm building.';
+  }
+
+  return 'A light day is still data. Tomorrow gets a fresh start.';
+};
 
 type ProgressFillGradientProps = {
   endColor: string;
@@ -755,13 +796,19 @@ const TooltipCalcRow = ({ label, value }: TooltipCalcRowProps) => (
 );
 
 type DetailRowProps = {
+  icon: keyof typeof Ionicons.glyphMap;
   label: string;
   value: string;
 };
 
-const DetailRow = ({ label, value }: DetailRowProps) => (
+const DetailRow = ({ icon, label, value }: DetailRowProps) => (
   <View style={styles.detailRow}>
-    <Text style={styles.detailLabel}>{label}</Text>
+    <View style={styles.detailCopy}>
+      <View style={styles.detailIcon}>
+        <Ionicons color={COLORS.progressOverflowStart} name={icon} size={17} />
+      </View>
+      <Text style={styles.detailLabel}>{label}</Text>
+    </View>
     <Text style={styles.detailValue}>{value}</Text>
   </View>
 );
@@ -1169,22 +1216,30 @@ const styles = StyleSheet.create({
   modalWrap: {
     flex: 1,
     justifyContent: 'center',
-    padding: 24,
+    padding: 18,
   },
   modalCard: {
     backgroundColor: COLORS.surface,
     borderColor: COLORS.border,
     borderRadius: 8,
     borderWidth: 1,
-    gap: 14,
-    padding: 18,
+    gap: 16,
+    padding: 14,
   },
   modalDateHeader: {
+    alignItems: 'center',
     backgroundColor: COLORS.action,
     borderRadius: 8,
-    gap: 3,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+    minHeight: 74,
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  modalDateCopy: {
+    flex: 1,
+    gap: 3,
   },
   modalEyebrow: {
     color: COLORS.onAccent,
@@ -1197,11 +1252,59 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '900',
   },
+  modalCloseIcon: {
+    alignItems: 'center',
+    backgroundColor: COLORS.primarySoft,
+    borderRadius: 8,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  modalHeroStat: {
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    padding: 14,
+  },
+  modalHeroIcon: {
+    alignItems: 'center',
+    backgroundColor: COLORS.progressOverflowSoft,
+    borderColor: COLORS.progressOverflowStart,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 50,
+    justifyContent: 'center',
+    width: 50,
+  },
+  modalHeroCopy: {
+    flex: 1,
+  },
+  modalHeroValue: {
+    color: COLORS.text,
+    fontSize: 31,
+    fontWeight: '900',
+  },
+  modalHeroLabel: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
+    textTransform: 'uppercase',
+  },
   modalProgressWrap: {
-    gap: 8,
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    padding: 12,
   },
   modalProgressOuter: {
-    height: 22,
+    height: 26,
     justifyContent: 'center',
     overflow: 'visible',
   },
@@ -1212,49 +1315,96 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   modalProgressFill: {
-    backgroundColor: COLORS.action,
+    backgroundColor: COLORS.progressOverflowStart,
     borderRadius: 999,
     height: '100%',
     overflow: 'hidden',
   },
   modalProgressOverflowFill: {
-    backgroundColor: COLORS.challenge,
+    backgroundColor: COLORS.progressDangerStart,
     borderRadius: 999,
     height: 16,
     left: 0,
     overflow: 'hidden',
     position: 'absolute',
-    top: 3,
+    top: 5,
   },
-  modalProgressText: {
-    color: COLORS.primary,
+  modalProgressMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalProgressLabel: {
+    color: COLORS.mutedText,
     fontSize: 12,
     fontWeight: '900',
-    textAlign: 'right',
+    textTransform: 'uppercase',
   },
-  modalRows: {
-    gap: 9,
+  modalProgressText: {
+    color: COLORS.progressOverflowStart,
+    fontSize: 16,
+    fontWeight: '900',
   },
-  detailRow: {
+  modalMotivation: {
     alignItems: 'center',
-    borderBottomColor: COLORS.border,
-    borderBottomWidth: 1,
+    backgroundColor: COLORS.primarySoft,
+    borderColor: COLORS.primary,
+    borderRadius: 8,
+    borderWidth: 1,
     flexDirection: 'row',
-    gap: 12,
-    justifyContent: 'space-between',
-    paddingBottom: 8,
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
   },
-  detailLabel: {
-    color: COLORS.mutedText,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  detailValue: {
+  modalMotivationText: {
     color: COLORS.text,
     flex: 1,
     fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+  modalRows: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  detailRow: {
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
+    gap: 10,
+    minHeight: 104,
+    padding: 11,
+  },
+  detailCopy: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 1,
+    gap: 10,
+  },
+  detailIcon: {
+    alignItems: 'center',
+    backgroundColor: COLORS.progressOverflowSoft,
+    borderColor: COLORS.progressOverflowStart,
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: 'center',
+    width: 32,
+  },
+  detailLabel: {
+    color: COLORS.text,
+    fontSize: 14,
     fontWeight: '900',
-    textAlign: 'right',
+  },
+  detailValue: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: '900',
   },
   modalButton: {
     alignItems: 'center',

@@ -1,7 +1,7 @@
 import { ImageSourcePropType } from 'react-native';
 
 export type AvatarAnimationKey = 'idle' | 'walk' | 'run';
-export type AvatarVariantKey = 'cat01' | 'cat02' | 'cat03' | 'cat04' | 'cat05';
+export type AvatarVariantKey = 'cat01' | 'cat02' | 'cat03' | 'cat04' | 'cat05' | 'chicken' | 'crow';
 
 export type AvatarAnimationConfig = {
   frameCount: number;
@@ -55,6 +55,42 @@ const createCatSpritesheet = ({
   },
 });
 
+const createBirdSpritesheet = ({
+  idle,
+  idleFrameCount,
+  run,
+  runFrameCount,
+  walk,
+  walkFrameCount,
+}: {
+  idle: ImageSourcePropType;
+  idleFrameCount: number;
+  run: ImageSourcePropType;
+  runFrameCount: number;
+  walk: ImageSourcePropType;
+  walkFrameCount: number;
+}): AvatarSpritesheetConfig => ({
+  frameHeight: 40,
+  frameWidth: 40,
+  animations: {
+    idle: {
+      frameCount: idleFrameCount,
+      fps: AVATAR_ANIMATION_FPS,
+      source: idle,
+    },
+    walk: {
+      frameCount: walkFrameCount,
+      fps: AVATAR_ANIMATION_FPS,
+      source: walk,
+    },
+    run: {
+      frameCount: runFrameCount,
+      fps: AVATAR_ANIMATION_FPS,
+      source: run,
+    },
+  },
+});
+
 export const AVATAR_VARIANTS: AvatarVariantConfig[] = [
   {
     key: 'cat01',
@@ -99,6 +135,30 @@ export const AVATAR_VARIANTS: AvatarVariantConfig[] = [
       idle: require('../../assets/sprites/avatar/cat05_idle.png'),
       run: require('../../assets/sprites/avatar/cat05_run.png'),
       walk: require('../../assets/sprites/avatar/cat05_walk.png'),
+    }),
+  },
+  {
+    key: 'chicken',
+    label: 'Chicken',
+    spritesheet: createBirdSpritesheet({
+      idle: require('../../assets/sprites/avatar/chicken_idle_blink.png'),
+      idleFrameCount: 4,
+      run: require('../../assets/sprites/avatar/chicken_run.png'),
+      runFrameCount: 4,
+      walk: require('../../assets/sprites/avatar/chicken_walk.png'),
+      walkFrameCount: 8,
+    }),
+  },
+  {
+    key: 'crow',
+    label: 'Crow',
+    spritesheet: createBirdSpritesheet({
+      idle: require('../../assets/sprites/avatar/crow_idle_caw.png'),
+      idleFrameCount: 12,
+      run: require('../../assets/sprites/avatar/crow_run.png'),
+      runFrameCount: 6,
+      walk: require('../../assets/sprites/avatar/crow_walk.png'),
+      walkFrameCount: 16,
     }),
   },
 ];

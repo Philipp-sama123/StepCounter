@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
-import { THEME } from '../constants';
+import { COLORS, THEME } from '../constants';
 import { AnimatedPressable } from './AnimatedPressable';
 
 export type SegmentedTabOption<T extends string> = {
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   selectedTab: {
-    backgroundColor: THEME.color.tabActive,
+    backgroundColor: COLORS.progressOverflowStart,
   },
   copy: {
     flexShrink: 1,

@@ -28,7 +28,7 @@ export const HeaderIconButton = ({
       onPress={onPress}
       style={[styles.button, isChallenge ? styles.challengeButton : styles.neutralButton, style]}
     >
-      <Ionicons color={isChallenge ? COLORS.onAccent : COLORS.text} name={icon} size={22} />
+      <Ionicons color={isChallenge ? COLORS.onDanger : COLORS.text} name={icon} size={22} />
     </AnimatedPressable>
   );
 };

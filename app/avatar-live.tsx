@@ -20,7 +20,7 @@ import {
 } from '../src/config/avatarSprites';
 import { COLORS } from '../src/constants';
 import { readAvatarPreferenceFromFirestore, saveAvatarPreferenceToFirestore } from '../src/firebase/avatarPreference';
-import { useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
+import { CALCULATED_STEP_DETECTOR_LIMITS, DetectorSample, useCalculatedStepCounter } from '../src/hooks/useCalculatedStepCounter';
 
 type RingGeometry = {
   circumference: number;
@@ -206,6 +206,32 @@ export default function LiveAvatarScreen() {
         <Text style={styles.reasonMeta}>{calculatedSteps.debugMessage}</Text>
       </SurfacePanel>
 
+      <SurfacePanel style={styles.graphPanel}>
+        <View style={styles.graphPanelHeader}>
+          <View>
+            <Text style={styles.graphPanelTitle}>Movement thresholds</Text>
+            <Text style={styles.graphPanelSubtitle}>Live samples used by the calculated step detector.</Text>
+          </View>
+          <Ionicons color={COLORS.progressOverflowStart} name="pulse-outline" size={22} />
+        </View>
+        <SignalGraph
+          goodAbove
+          label="Motion signal"
+          limitLabel="adaptive threshold"
+          limitValue={calculatedSteps.motionThresholdG}
+          samples={calculatedSteps.samples.map((sample) => sample.motionG)}
+          valueLabel={`${formatAxis(calculatedSteps.lastMotionG)}g / ${formatAxis(calculatedSteps.motionThresholdG)}g`}
+        />
+        <SignalGraph
+          label="Rotation filter"
+          limitLabel="rotation limit"
+          limitValue={CALCULATED_STEP_DETECTOR_LIMITS.rotationLimitRadPerSecond}
+          samples={calculatedSteps.samples.map((sample) => sample.rotationRadPerSecond)}
+          valueLabel={`${formatAxis(calculatedSteps.lastRotationRadPerSecond)} rad/s`}
+        />
+        <TimingGraph samples={calculatedSteps.samples} />
+      </SurfacePanel>
+
       <SurfacePanel style={styles.pickerPanel}>
         <Text style={styles.pickerTitle}>Avatar</Text>
         <View style={styles.avatarPicker}>
@@ -267,6 +293,98 @@ const Metric = ({ label, value }: { label: string; value: string }) => (
     <Text style={styles.metricValue}>{value}</Text>
   </View>
 );
+
+const SignalGraph = ({
+  goodAbove = false,
+  label,
+  limitLabel,
+  limitValue,
+  samples,
+  valueLabel,
+}: {
+  goodAbove?: boolean;
+  label: string;
+  limitLabel: string;
+  limitValue: number;
+  samples: number[];
+  valueLabel: string;
+}) => {
+  const graphSamples = samples.slice(-32);
+  const maxValue = Math.max(limitValue * 1.4, ...graphSamples, 1);
+  const limitPercent = Math.max(0, Math.min(100, (limitValue / maxValue) * 100));
+
+  return (
+    <View style={styles.signalGraph}>
+      <View style={styles.signalHeader}>
+        <Text style={styles.signalTitle}>{label}</Text>
+        <Text style={styles.signalValue}>{valueLabel}</Text>
+      </View>
+      <View style={styles.signalBars}>
+        <View style={[styles.signalLimit, { bottom: `${limitPercent}%` }]} />
+        {graphSamples.length > 0 ? graphSamples.map((sample, index) => {
+          const height = Math.max(4, Math.min(100, (sample / maxValue) * 100));
+          const passes = goodAbove ? sample >= limitValue : sample <= limitValue;
+
+          return (
+            <View
+              key={`${index}-${sample}`}
+              style={[
+                styles.signalBar,
+                passes ? styles.signalBarPass : styles.signalBarFail,
+                { height: `${height}%` },
+              ]}
+            />
+          );
+        }) : <Text style={styles.signalEmpty}>waiting for samples</Text>}
+      </View>
+      <Text style={styles.signalLimitLabel}>{limitLabel}</Text>
+    </View>
+  );
+};
+
+const TimingGraph = ({ samples }: { samples: DetectorSample[] }) => {
+  const graphSamples = samples.slice(-32);
+  const maxTimingMs = 2400;
+  const minStepPercent = (CALCULATED_STEP_DETECTOR_LIMITS.minStepIntervalMs / maxTimingMs) * 100;
+  const maxStepPercent = (CALCULATED_STEP_DETECTOR_LIMITS.maxStepIntervalMs / maxTimingMs) * 100;
+
+  return (
+    <View style={styles.signalGraph}>
+      <View style={styles.signalHeader}>
+        <Text style={styles.signalTitle}>Step timing</Text>
+        <Text style={styles.signalValue}>
+          {`${CALCULATED_STEP_DETECTOR_LIMITS.minStepIntervalMs}-${CALCULATED_STEP_DETECTOR_LIMITS.maxStepIntervalMs}ms`}
+        </Text>
+      </View>
+      <View style={styles.signalBars}>
+        <View style={[styles.signalLimit, styles.signalTimingMin, { bottom: `${minStepPercent}%` }]} />
+        <View style={[styles.signalLimit, { bottom: `${maxStepPercent}%` }]} />
+        {graphSamples.length > 0 ? graphSamples.map((sample, index) => {
+          const elapsedMs = sample.elapsedMsSinceStep ?? 0;
+          const height = Math.max(4, Math.min(100, (elapsedMs / maxTimingMs) * 100));
+          const passes =
+            sample.elapsedMsSinceStep === null ||
+            elapsedMs > CALCULATED_STEP_DETECTOR_LIMITS.sequenceResetIntervalMs ||
+            (elapsedMs >= CALCULATED_STEP_DETECTOR_LIMITS.minStepIntervalMs && elapsedMs <= CALCULATED_STEP_DETECTOR_LIMITS.maxStepIntervalMs);
+
+          return (
+            <View
+              key={`${sample.timestamp}-${index}`}
+              style={[
+                styles.signalBar,
+                passes ? styles.signalBarPass : styles.signalBarFail,
+                { height: `${height}%` },
+              ]}
+            />
+          );
+        }) : <Text style={styles.signalEmpty}>waiting for timing</Text>}
+      </View>
+      <Text style={styles.signalLimitLabel}>{`reset after ${CALCULATED_STEP_DETECTOR_LIMITS.sequenceResetIntervalMs}ms`}</Text>
+    </View>
+  );
+};
+
+const formatAxis = (value: number): string => value.toFixed(2);
 
 const getRingGeometry = (ringProgress: Animated.Value): RingGeometry => {
   const radius = (RING_SIZE - RING_STROKE) / 2;
@@ -493,6 +611,101 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 18,
+  },
+  graphPanel: {
+    gap: 12,
+  },
+  graphPanelHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  graphPanelTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  graphPanelSubtitle: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  signalGraph: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+    padding: 10,
+  },
+  signalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  signalTitle: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  signalValue: {
+    color: COLORS.progressOverflowStart,
+    fontFamily: 'monospace',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  signalBars: {
+    alignItems: 'flex-end',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 2,
+    height: 84,
+    overflow: 'hidden',
+    paddingHorizontal: 7,
+    paddingTop: 6,
+    position: 'relative',
+  },
+  signalLimit: {
+    backgroundColor: COLORS.progressDangerStart,
+    height: 2,
+    left: 0,
+    opacity: 0.78,
+    position: 'absolute',
+    right: 0,
+  },
+  signalTimingMin: {
+    backgroundColor: COLORS.progressOverflowStart,
+  },
+  signalBar: {
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 3,
+    flex: 1,
+    minWidth: 3,
+  },
+  signalBarPass: {
+    backgroundColor: COLORS.progressOverflowStart,
+  },
+  signalBarFail: {
+    backgroundColor: COLORS.stopped,
+  },
+  signalEmpty: {
+    alignSelf: 'center',
+    color: COLORS.mutedText,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  signalLimitLabel: {
+    color: COLORS.mutedText,
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'right',
   },
   pickerPanel: {
     gap: 12,

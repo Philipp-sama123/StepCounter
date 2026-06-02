@@ -135,7 +135,7 @@ export const ChallengeRewardOverlay = ({ onDone, reward }: ChallengeRewardOverla
           ]}
         >
           <Animated.View style={[styles.rewardIcon, { transform: [{ scale: iconScale }] }]}>
-            <Ionicons color={COLORS.onAccent} name="trophy-outline" size={42} />
+            <Ionicons color={COLORS.onDanger} name="trophy-outline" size={42} />
           </Animated.View>
           <Text style={styles.rewardEyebrow}>Challenge complete</Text>
           <Text style={styles.rewardSteps}>{`+${reward.steps.toLocaleString()}`}</Text>

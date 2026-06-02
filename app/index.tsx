@@ -320,7 +320,7 @@ export default function HomeScreen() {
               onPress={toggleDashboardAvatar}
               style={[styles.avatarToggle, isDashboardAvatarVisible ? styles.avatarToggleActive : null]}
             >
-              <Ionicons color={isDashboardAvatarVisible ? COLORS.onAccent : COLORS.text} name="paw-outline" size={17} />
+              <Ionicons color={COLORS.text} name="paw-outline" size={17} />
               <Text style={[styles.avatarToggleText, isDashboardAvatarVisible ? styles.avatarToggleTextActive : null]}>
                 {isDashboardAvatarVisible ? 'Avatar on' : 'Avatar'}
               </Text>
@@ -610,7 +610,7 @@ const DayDetailModal = ({ day, goal, onClose, profile, todayString }: DayDetailM
               <Text style={styles.modalTitle}>{formatDisplayDate(day.date)}</Text>
             </View>
             <AnimatedPressable accessibilityLabel="Close day details" accessibilityRole="button" onPress={onClose} style={styles.modalCloseIcon}>
-              <Ionicons color={COLORS.onAccent} name="close-outline" size={22} />
+              <Ionicons color={COLORS.text} name="close-outline" size={22} />
             </AnimatedPressable>
           </View>
           <View style={styles.modalHeroStat}>
@@ -944,8 +944,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   avatarToggleActive: {
-    backgroundColor: COLORS.challengeText,
-    borderColor: COLORS.challengeText,
+    backgroundColor: COLORS.progressOverflowStart,
+    borderColor: COLORS.progressOverflowStart,
   },
   avatarToggleText: {
     color: COLORS.text,
@@ -953,7 +953,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   avatarToggleTextActive: {
-    color: COLORS.onAccent,
+    color: COLORS.text,
   },
   statusRow: {
     minHeight: 38,
@@ -1254,7 +1254,7 @@ const styles = StyleSheet.create({
   },
   modalCloseIcon: {
     alignItems: 'center',
-    backgroundColor: COLORS.primarySoft,
+    backgroundColor: COLORS.progressOverflowSoft,
     borderRadius: 8,
     height: 38,
     justifyContent: 'center',

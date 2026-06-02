@@ -78,10 +78,10 @@ export const THEME = {
     warning: COLORS.warning,
     workout: COLORS.challenge,
     workoutMuted: COLORS.challengeSoft,
-    tabActive: COLORS.challengeText,
+    tabActive: COLORS.primary,
     tabBackground: COLORS.surface,
     tabInactive: COLORS.mutedText,
-    tabSelectedText: COLORS.onAccent,
+    tabSelectedText: COLORS.text,
     tabText: COLORS.text,
   },
   radius: {

@@ -4,16 +4,29 @@ import * as FirebaseAuth from '@firebase/auth';
 import { Auth, getAuth, initializeAuth, Persistence } from '@firebase/auth';
 import { Firestore, getFirestore } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+const firebaseEnv = {
+  EXPO_PUBLIC_FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+  EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  EXPO_PUBLIC_FIREBASE_PROJECT_ID: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  EXPO_PUBLIC_FIREBASE_APP_ID: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
+const firebaseConfig = {
+  apiKey: firebaseEnv.EXPO_PUBLIC_FIREBASE_API_KEY,
+  authDomain: firebaseEnv.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: firebaseEnv.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: firebaseEnv.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: firebaseEnv.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: firebaseEnv.EXPO_PUBLIC_FIREBASE_APP_ID,
+};
+
+export const missingFirebaseConfigKeys = Object.entries(firebaseEnv)
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
+
+export const isFirebaseConfigured = missingFirebaseConfigKeys.length === 0;
 
 export const firebaseApp: FirebaseApp | null = isFirebaseConfigured
   ? getApps().length > 0

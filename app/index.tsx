@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Modal, PanResponder, Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
@@ -7,6 +8,7 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
+import { DashboardAvatar } from '../src/components/avatar/DashboardAvatar';
 import { AppScreen } from '../src/components/layout/AppScreen';
 import { ProgressRing } from '../src/components/ProgressRing';
 import { RevealView } from '../src/components/RevealView';
@@ -16,6 +18,7 @@ import { StepTrendChart } from '../src/components/StepTrendChart';
 import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { MetricCard } from '../src/components/ui/MetricCard';
 import { SurfacePanel } from '../src/components/ui/SurfacePanel';
+import { AvatarAnimationKey } from '../src/config/avatarSprites';
 import { COLORS, DEFAULT_GOAL } from '../src/constants';
 import { useDailyStepSync } from '../src/hooks/useDailyStepSync';
 import { useStepCounter } from '../src/hooks/useStepCounter';
@@ -27,7 +30,12 @@ import { appendToastMessage } from '../src/utils/toastQueue';
 
 type DashboardRange = 'month' | 'week' | 'year';
 type RangeTotals = Record<DashboardRange, number>;
+const DASHBOARD_AVATAR_VISIBLE_KEY = 'dashboard:avatar-visible';
 const MIN_CALORIE_STEPS = 20;
+const AVATAR_RUN_HOLD_MS = 1600;
+const AVATAR_RUN_DELTA_STEPS = 24;
+const AVATAR_RUN_FAST_DELTA_STEPS = 8;
+const AVATAR_RUN_FAST_WINDOW_MS = 1200;
 
 export default function HomeScreen() {
   const {
@@ -42,6 +50,7 @@ export default function HomeScreen() {
   } = useStepCounter('combined');
   const { user } = useAuth();
   const [bodyProfile, setBodyProfile] = useState<UserBodyProfile | null>(null);
+  const [dashboardAvatarState, setDashboardAvatarState] = useState<AvatarAnimationKey>('idle');
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [graphRange, setGraphRange] = useState<DashboardRange>('week');
   const [graphReplayKey, setGraphReplayKey] = useState(0);
@@ -50,6 +59,7 @@ export default function HomeScreen() {
   const [rangeTotals, setRangeTotals] = useState<RangeTotals>({ month: 0, week: 0, year: 0 });
   const [isCalorieTooltipVisible, setIsCalorieTooltipVisible] = useState(false);
   const [progressResetKey, setProgressResetKey] = useState(0);
+  const [isDashboardAvatarVisible, setIsDashboardAvatarVisible] = useState(false);
   const [selectedDay, setSelectedDay] = useState<StepHistoryEntry | null>(null);
   const [selectedHeroDate, setSelectedHeroDate] = useState(getTodayString());
   const [selectedHeroSteps, setSelectedHeroSteps] = useState(0);
@@ -57,6 +67,9 @@ export default function HomeScreen() {
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const graphRangeRef = useRef<DashboardRange>(graphRange);
+  const dashboardAvatarIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDashboardAvatarStepAtRef = useRef(0);
+  const previousDashboardAvatarStepsRef = useRef(todaySteps);
   const todayStepsRef = useRef(todaySteps);
   const showServerToast = useCallback((message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
     if (variant === 'error') {
@@ -121,6 +134,79 @@ export default function HomeScreen() {
   const hideServerToast = (id: number): void => {
     setServerToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
   };
+
+  const toggleDashboardAvatar = useCallback((): void => {
+    setIsDashboardAvatarVisible((isVisible) => {
+      const nextValue = !isVisible;
+      void AsyncStorage.setItem(DASHBOARD_AVATAR_VISIBLE_KEY, nextValue ? 'true' : 'false');
+      if (!nextValue) {
+        setDashboardAvatarState('idle');
+      }
+      return nextValue;
+    });
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAvatarVisibility = async (): Promise<void> => {
+      const storedValue = await AsyncStorage.getItem(DASHBOARD_AVATAR_VISIBLE_KEY);
+      if (isMounted) {
+        setIsDashboardAvatarVisible(storedValue === 'true');
+      }
+    };
+
+    void loadAvatarVisibility();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isDashboardAvatarVisible) {
+      previousDashboardAvatarStepsRef.current = todaySteps;
+      setDashboardAvatarState('idle');
+      return;
+    }
+
+    if (dashboardAvatarIdleTimerRef.current !== null) {
+      clearTimeout(dashboardAvatarIdleTimerRef.current);
+      dashboardAvatarIdleTimerRef.current = null;
+    }
+
+    const previousSteps = previousDashboardAvatarStepsRef.current;
+    previousDashboardAvatarStepsRef.current = todaySteps;
+    const stepDelta = todaySteps - previousSteps;
+
+    if (status !== 'walking') {
+      setDashboardAvatarState('idle');
+      return;
+    }
+
+    const now = Date.now();
+    const previousStepAt = lastDashboardAvatarStepAtRef.current;
+    if (stepDelta > 0) {
+      lastDashboardAvatarStepAtRef.current = now;
+    }
+    const isFastUpdate =
+      stepDelta >= AVATAR_RUN_DELTA_STEPS ||
+      (previousStepAt > 0 && now - previousStepAt <= AVATAR_RUN_FAST_WINDOW_MS && stepDelta >= AVATAR_RUN_FAST_DELTA_STEPS);
+
+    setDashboardAvatarState(isFastUpdate ? 'run' : 'walk');
+
+    if (isFastUpdate) {
+      dashboardAvatarIdleTimerRef.current = setTimeout(() => {
+        setDashboardAvatarState('walk');
+      }, AVATAR_RUN_HOLD_MS);
+    }
+  }, [isDashboardAvatarVisible, status, todaySteps]);
+
+  useEffect(() => () => {
+    if (dashboardAvatarIdleTimerRef.current !== null) {
+      clearTimeout(dashboardAvatarIdleTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     todayStepsRef.current = todaySteps;
@@ -223,6 +309,23 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
 
+          {isHeroToday && isDashboardAvatarVisible ? (
+            <DashboardAvatar state={dashboardAvatarState} userId={user?.uid ?? null} />
+          ) : null}
+          {isHeroToday ? (
+            <AnimatedPressable
+              accessibilityLabel={isDashboardAvatarVisible ? 'Hide dashboard avatar' : 'Show dashboard avatar'}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: isDashboardAvatarVisible }}
+              onPress={toggleDashboardAvatar}
+              style={[styles.avatarToggle, isDashboardAvatarVisible ? styles.avatarToggleActive : null]}
+            >
+              <Ionicons color={isDashboardAvatarVisible ? COLORS.onAccent : COLORS.text} name="paw-outline" size={17} />
+              <Text style={[styles.avatarToggleText, isDashboardAvatarVisible ? styles.avatarToggleTextActive : null]}>
+                {isDashboardAvatarVisible ? 'Avatar on' : 'Avatar'}
+              </Text>
+            </AnimatedPressable>
+          ) : null}
           <View style={styles.statusRow}>
             {isAvailable ? <StatusBadge status={status} /> : <Text style={styles.unsupported}>Waiting for step data</Text>}
           </View>
@@ -780,6 +883,30 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 16,
     fontWeight: '800',
+  },
+  avatarToggle: {
+    alignItems: 'center',
+    backgroundColor: COLORS.button,
+    borderColor: COLORS.buttonBorder,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 7,
+    minHeight: 34,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+  },
+  avatarToggleActive: {
+    backgroundColor: COLORS.challengeText,
+    borderColor: COLORS.challengeText,
+  },
+  avatarToggleText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  avatarToggleTextActive: {
+    color: COLORS.onAccent,
   },
   statusRow: {
     minHeight: 38,

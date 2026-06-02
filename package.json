@@ -8,6 +8,7 @@
     "build:apk": "eas build -p android --profile preview",
     "build:android": "eas build -p android --profile production",
     "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
     "web": "expo start --web"
   },
   "engines": {

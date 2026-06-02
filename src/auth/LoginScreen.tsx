@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './AuthContext';
 import { COLORS } from '../constants';
 import { BackgroundGradient } from '../components/layout/BackgroundGradient';
+import { missingFirebaseConfigKeys } from '../firebase/config';
 import { triggerSelectionHaptic } from '../utils/haptics';
 
 export const LoginScreen = () => {
@@ -77,6 +78,9 @@ export const LoginScreen = () => {
             <View style={styles.warning}>
               <Text style={styles.warningTitle}>Firebase is not configured</Text>
               <Text style={styles.warningBody}>Create a local .env file from .env.example and restart Expo.</Text>
+              {__DEV__ && missingFirebaseConfigKeys.length > 0 ? (
+                <Text style={styles.warningMeta}>{`Missing: ${missingFirebaseConfigKeys.join(', ')}`}</Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -181,6 +185,10 @@ const getAuthErrorCode = (error: unknown): string | null => {
 };
 
 const logAuthError = (error: unknown): void => {
+  if (!__DEV__) {
+    return;
+  }
+
   if (error instanceof Error) {
     console.error('Firebase auth failed', {
       code: getAuthErrorCode(error),
@@ -301,6 +309,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     lineHeight: 18,
+  },
+  warningMeta: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
   },
   disabled: {
     opacity: 0.45,

@@ -85,6 +85,14 @@ const RootNavigator = () => {
         }}
       />
       <Tabs.Screen
+        name="avatar-live"
+        options={{
+          href: null,
+          tabBarStyle: { display: 'none' },
+          title: 'Live avatar',
+        }}
+      />
+      <Tabs.Screen
         name="challenge-history"
         options={{
           title: 'Sessions',

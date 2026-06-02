@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Animated, Image, ImageSourcePropType, Modal, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Animated, Image, ImageSourcePropType, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { AnimatedPressable } from '../AnimatedPressable';
@@ -14,7 +15,7 @@ import {
   DEFAULT_AVATAR_VARIANT_KEY,
 } from '../../config/avatarSprites';
 import { COLORS } from '../../constants';
-import { readAvatarPreferenceFromFirestore, saveAvatarPreferenceToFirestore } from '../../firebase/avatarPreference';
+import { readAvatarPreferenceFromFirestore } from '../../firebase/avatarPreference';
 
 type SensorAvatarProps = {
   cadenceStepsPerMinute: number;
@@ -36,9 +37,6 @@ type RingGeometry = {
 const RING_SIZE = 256;
 const RING_STROKE = 14;
 const AVATAR_SIZE = 160;
-const FULLSCREEN_RING_SIZE = 404;
-const FULLSCREEN_RING_STROKE = 20;
-const FULLSCREEN_AVATAR_SIZE = 256;
 const STOPPED_AFTER_MS = 2200;
 const WALK_HOLD_MS = 2000;
 const RUN_CADENCE = 155;
@@ -79,11 +77,10 @@ export const SensorAvatar = ({
   const selectedSpritesheet = selectedVariant?.spritesheet ?? spritesheet;
   const animation = selectedSpritesheet.animations[animationKey];
   const [frameIndex, setFrameIndex] = useState(0);
-  const [isFullscreenVisible, setIsFullscreenVisible] = useState(false);
+  const router = useRouter();
   const ringProgress = useRef(new Animated.Value(confidence / 100)).current;
   const pulseScale = useRef(new Animated.Value(1)).current;
   const ring = useMemo(() => getRingGeometry(ringProgress, RING_SIZE, RING_STROKE), [ringProgress]);
-  const fullscreenRing = useMemo(() => getRingGeometry(ringProgress, FULLSCREEN_RING_SIZE, FULLSCREEN_RING_STROKE), [ringProgress]);
   const statusLabel = getDetectorStatusLabel(displayDecision, displayReason);
 
   useEffect(() => {
@@ -152,7 +149,7 @@ export const SensorAvatar = ({
       <AnimatedPressable
         accessibilityLabel="Open live avatar fullscreen"
         accessibilityRole="button"
-        onPress={() => setIsFullscreenVisible(true)}
+        onPress={() => router.push('/avatar-live')}
         style={styles.panel}
       >
         <View style={styles.header}>
@@ -182,74 +179,6 @@ export const SensorAvatar = ({
           <AvatarMetric label="Motion" value={`${motionG.toFixed(2)}g`} />
         </View>
       </AnimatedPressable>
-
-      <Modal animationType="fade" transparent visible={isFullscreenVisible} onRequestClose={() => setIsFullscreenVisible(false)}>
-        <View style={styles.fullscreenBackdrop}>
-          <View style={styles.fullscreenStage}>
-            <View style={styles.fullscreenHeader}>
-              <View>
-                <Text style={styles.fullscreenTitle}>Live avatar</Text>
-                <Text style={styles.fullscreenSubtitle}>{`${selectedVariant?.label ?? 'Avatar'} · ${statusLabel}`}</Text>
-              </View>
-              <AnimatedPressable
-                accessibilityLabel="Close fullscreen avatar"
-                accessibilityRole="button"
-                onPress={() => setIsFullscreenVisible(false)}
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>Close</Text>
-              </AnimatedPressable>
-            </View>
-
-            <View style={styles.fullscreenCenter}>
-              <AvatarStage
-                animation={animation}
-                animationKey={animationKey}
-                avatarSize={FULLSCREEN_AVATAR_SIZE}
-                frameHeight={selectedSpritesheet.frameHeight}
-                frameIndex={frameIndex}
-                frameWidth={selectedSpritesheet.frameWidth}
-                pulseScale={pulseScale}
-                ring={fullscreenRing}
-                ringSize={FULLSCREEN_RING_SIZE}
-                ringStroke={FULLSCREEN_RING_STROKE}
-              />
-            </View>
-
-            <View style={styles.fullscreenMetrics}>
-              <AvatarMetric label="Cadence" value={`${cadenceStepsPerMinute}/min`} />
-              <AvatarMetric label="Confidence" value={`${confidence}%`} />
-              <AvatarMetric label="Motion" value={`${motionG.toFixed(2)}g`} />
-              <AvatarMetric label="State" value={animationKey} />
-              <AvatarMetric label="Status" value={statusLabel} />
-            </View>
-            <Text style={styles.fullscreenReason}>{displayReason}</Text>
-            <View style={styles.avatarPicker}>
-              {AVATAR_VARIANTS.map((variant) => {
-                const isSelected = variant.key === selectedAvatarKey;
-
-                return (
-                  <AnimatedPressable
-                    accessibilityLabel={`Select ${variant.label}`}
-                    accessibilityRole="button"
-                    key={variant.key}
-                    onPress={() => {
-                      setSelectedAvatarKey(variant.key);
-                      void AsyncStorage.setItem(AVATAR_STORAGE_KEY, variant.key);
-                      if (userId !== null) {
-                        void saveAvatarPreferenceToFirestore(userId, variant.key);
-                      }
-                    }}
-                    style={[styles.avatarOption, isSelected ? styles.avatarOptionSelected : null]}
-                  >
-                    <Text style={[styles.avatarOptionText, isSelected ? styles.avatarOptionTextSelected : null]}>{variant.label}</Text>
-                  </AnimatedPressable>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-      </Modal>
     </>
   );
 };
@@ -537,90 +466,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     marginTop: 4,
-  },
-  fullscreenBackdrop: {
-    backgroundColor: 'rgba(0, 0, 0, 0.42)',
-    flex: 1,
-    padding: 18,
-  },
-  fullscreenStage: {
-    backgroundColor: '#F5F7EF',
-    borderColor: '#E2E7D8',
-    borderRadius: 8,
-    borderWidth: 1,
-    flex: 1,
-    gap: 20,
-    padding: 18,
-  },
-  fullscreenHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  fullscreenTitle: {
-    color: COLORS.ink,
-    fontSize: 24,
-    fontWeight: '900',
-  },
-  fullscreenSubtitle: {
-    color: '#66705F',
-    fontSize: 13,
-    fontWeight: '800',
-    marginTop: 3,
-  },
-  closeButton: {
-    backgroundColor: COLORS.button,
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  closeButtonText: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  fullscreenCenter: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  fullscreenMetrics: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  fullscreenReason: {
-    color: '#66705F',
-    fontSize: 12,
-    fontWeight: '800',
-    lineHeight: 17,
-  },
-  avatarPicker: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  avatarOption: {
-    backgroundColor: '#E8ECEF',
-    borderColor: '#D4DADF',
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 40,
-    minWidth: 82,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  avatarOptionSelected: {
-    backgroundColor: COLORS.challenge,
-    borderColor: COLORS.challenge,
-  },
-  avatarOptionText: {
-    color: COLORS.ink,
-    fontSize: 12,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  avatarOptionTextSelected: {
-    color: COLORS.onDanger,
   },
 });

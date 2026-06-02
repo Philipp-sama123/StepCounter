@@ -39,6 +39,9 @@ yarn-error.*
 # local Firebase rules
 firestore.rules
 
+# local documentation notes
+docs/
+
 # typescript
 *.tsbuildinfo
 

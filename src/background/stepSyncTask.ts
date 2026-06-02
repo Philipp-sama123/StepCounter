@@ -54,6 +54,11 @@ TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
 
 export const registerBackgroundStepSync = async (): Promise<void> => {
   try {
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_STEP_SYNC_TASK);
+    if (isRegistered) {
+      return;
+    }
+
     await BackgroundTask.registerTaskAsync(BACKGROUND_STEP_SYNC_TASK, {
       minimumInterval: BACKGROUND_STEP_SYNC_INTERVAL_MINUTES,
     });
@@ -64,6 +69,11 @@ export const registerBackgroundStepSync = async (): Promise<void> => {
 
 export const unregisterBackgroundStepSync = async (): Promise<void> => {
   try {
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_STEP_SYNC_TASK);
+    if (!isRegistered) {
+      return;
+    }
+
     await BackgroundTask.unregisterTaskAsync(BACKGROUND_STEP_SYNC_TASK);
   } catch (error) {
     console.warn('Unable to unregister background step sync.', error);

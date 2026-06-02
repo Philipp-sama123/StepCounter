@@ -78,7 +78,7 @@ export const MovementInsightPanel = ({
           <Ionicons color={COLORS.challenge} name="flag-outline" size={18} />
           <View>
             <Text style={styles.challengeDetailLabel}>{isChallengeActive ? 'Challenge goal' : 'Daily challenge'}</Text>
-            <Text style={styles.challengeDetailValueOrange}>
+            <Text style={styles.challengeDetailValueAccent}>
               {`${(isChallengeActive ? challengeGoalPercent : dailyChallengeGoalPercent).toFixed(1)}%`}
             </Text>
           </View>
@@ -87,7 +87,7 @@ export const MovementInsightPanel = ({
           <Ionicons color={COLORS.challenge} name="walk-outline" size={18} />
           <View>
             <Text style={styles.challengeDetailLabel}>{isChallengeActive ? 'Goal steps' : 'Daily goal'}</Text>
-            <Text style={styles.challengeDetailValueOrange}>
+            <Text style={styles.challengeDetailValueAccent}>
               {isChallengeActive ? currentChallengeGoal.toLocaleString() : dailyChallengeGoal.toLocaleString()}
             </Text>
           </View>
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '900',
   },
-  challengeDetailValueOrange: {
+  challengeDetailValueAccent: {
     color: COLORS.challenge,
     fontSize: 15,
     fontWeight: '900',

@@ -118,7 +118,7 @@ export const StepTrendChart = ({
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Daily step trend</Text>
-          <Text style={styles.subtitle}>{metric === 'steps' ? 'Orange bars show logged challenge sessions' : 'Steps per minute from walking sessions'}</Text>
+          <Text style={styles.subtitle}>{metric === 'steps' ? 'Green bars show logged challenge sessions' : 'Steps per minute from walking sessions'}</Text>
         </View>
         <Text style={styles.goal}>{metric === 'steps' ? `${formatCompactSteps(goal)} goal` : 'pace'}</Text>
       </View>

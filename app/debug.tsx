@@ -538,7 +538,7 @@ const TimingGraph = ({ samples }: { samples: DetectorSample[] }) => {
         {samples.slice(-32).map((sample, index) => {
           const elapsedMs = sample.elapsedMsSinceStep ?? 0;
           const height = Math.max(4, Math.min(100, (elapsedMs / maxTimingMs) * 100));
-          const passes = sample.elapsedMsSinceStep === null || elapsedMs > 2200 || (elapsedMs >= 260 && elapsedMs <= 1400);
+          const passes = sample.elapsedMsSinceStep !== null && (elapsedMs > 2200 || (elapsedMs >= 260 && elapsedMs <= 1400));
 
           return (
             <View
@@ -988,7 +988,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   signalValue: {
-    color: COLORS.challenge,
+    color: COLORS.progressOverflowStart,
     fontFamily: 'monospace',
     fontSize: 12,
     fontWeight: '900',
@@ -1008,7 +1008,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   signalLimit: {
-    backgroundColor: COLORS.challenge,
+    backgroundColor: COLORS.progressDangerStart,
     height: 2,
     left: 0,
     opacity: 0.65,
@@ -1016,7 +1016,7 @@ const styles = StyleSheet.create({
     right: 0,
   },
   signalTimingMin: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.progressOverflowStart,
   },
   signalBar: {
     borderTopLeftRadius: 3,
@@ -1025,10 +1025,10 @@ const styles = StyleSheet.create({
     minWidth: 3,
   },
   signalBarPass: {
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.progressOverflowStart,
   },
   signalBarFail: {
-    backgroundColor: COLORS.stopped,
+    backgroundColor: COLORS.progressDangerStart,
   },
   signalLimitLabel: {
     color: COLORS.mutedText,

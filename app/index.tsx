@@ -701,19 +701,32 @@ const ModalProgressBar = ({ progress, replayKey }: ModalProgressBarProps) => {
     inputRange: [0, 1],
     outputRange: ['0%', '100%'],
   });
+  const hasOverflow = progress > 1;
 
   return (
     <View style={styles.modalProgressWrap}>
       <Animated.View style={[styles.modalProgressOuter, { transform: [{ scale: rewardPulse }] }]}>
+        <View style={styles.modalProgressHeader}>
+          <Text style={styles.modalProgressLabel}>Goal progress</Text>
+          <Text style={styles.modalProgressValue}>{formatPercent(Math.min(progress, 1))}</Text>
+        </View>
         <View style={styles.modalProgressTrack}>
           <Animated.View style={[styles.modalProgressFill, { width }]}>
             <ProgressFillGradient gradientId="modalBaseProgressGradient" endColor={COLORS.progressOverflowEnd} startColor={COLORS.progressOverflowStart} />
           </Animated.View>
         </View>
-        {progress > 1 ? (
-          <Animated.View style={[styles.modalProgressOverflowFill, { width: overflowWidth }]}>
-            <ProgressFillGradient gradientId="modalOverflowProgressGradient" endColor={COLORS.progressDangerEnd} startColor={COLORS.progressDangerStart} />
-          </Animated.View>
+        {hasOverflow ? (
+          <View style={styles.modalOverflowBlock}>
+            <View style={styles.modalProgressHeader}>
+              <Text style={styles.modalOverflowLabel}>Extra after goal</Text>
+              <Text style={styles.modalOverflowValue}>{`+${formatPercent(progress - 1)}`}</Text>
+            </View>
+            <View style={styles.modalProgressOverflowTrack}>
+              <Animated.View style={[styles.modalProgressOverflowFill, { width: overflowWidth }]}>
+                <ProgressFillGradient gradientId="modalOverflowProgressGradient" endColor={COLORS.progressDangerEnd} startColor={COLORS.progressDangerStart} />
+              </Animated.View>
+            </View>
+          </View>
         ) : null}
       </Animated.View>
       <View style={styles.modalProgressMeta}>
@@ -1304,14 +1317,12 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   modalProgressOuter: {
-    height: 26,
-    justifyContent: 'center',
-    overflow: 'visible',
+    gap: 8,
   },
   modalProgressTrack: {
     backgroundColor: COLORS.border,
     borderRadius: 999,
-    height: 14,
+    height: 13,
     overflow: 'hidden',
   },
   modalProgressFill: {
@@ -1323,11 +1334,23 @@ const styles = StyleSheet.create({
   modalProgressOverflowFill: {
     backgroundColor: COLORS.progressDangerStart,
     borderRadius: 999,
-    height: 16,
-    left: 0,
+    height: '100%',
     overflow: 'hidden',
-    position: 'absolute',
-    top: 5,
+  },
+  modalOverflowBlock: {
+    gap: 6,
+    paddingTop: 2,
+  },
+  modalProgressOverflowTrack: {
+    backgroundColor: COLORS.progressDangerEnd,
+    borderRadius: 999,
+    height: 8,
+    overflow: 'hidden',
+  },
+  modalProgressHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   modalProgressMeta: {
     alignItems: 'center',
@@ -1339,6 +1362,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     textTransform: 'uppercase',
+  },
+  modalProgressValue: {
+    color: COLORS.progressOverflowStart,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  modalOverflowLabel: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  modalOverflowValue: {
+    color: COLORS.progressDangerStart,
+    fontSize: 12,
+    fontWeight: '900',
   },
   modalProgressText: {
     color: COLORS.progressOverflowStart,

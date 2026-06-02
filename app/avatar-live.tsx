@@ -363,9 +363,9 @@ const TimingGraph = ({ samples }: { samples: DetectorSample[] }) => {
           const elapsedMs = sample.elapsedMsSinceStep ?? 0;
           const height = Math.max(4, Math.min(100, (elapsedMs / maxTimingMs) * 100));
           const passes =
-            sample.elapsedMsSinceStep === null ||
-            elapsedMs > CALCULATED_STEP_DETECTOR_LIMITS.sequenceResetIntervalMs ||
-            (elapsedMs >= CALCULATED_STEP_DETECTOR_LIMITS.minStepIntervalMs && elapsedMs <= CALCULATED_STEP_DETECTOR_LIMITS.maxStepIntervalMs);
+            sample.elapsedMsSinceStep !== null &&
+            (elapsedMs > CALCULATED_STEP_DETECTOR_LIMITS.sequenceResetIntervalMs ||
+              (elapsedMs >= CALCULATED_STEP_DETECTOR_LIMITS.minStepIntervalMs && elapsedMs <= CALCULATED_STEP_DETECTOR_LIMITS.maxStepIntervalMs));
 
           return (
             <View
@@ -691,7 +691,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.progressOverflowStart,
   },
   signalBarFail: {
-    backgroundColor: COLORS.stopped,
+    backgroundColor: COLORS.progressDangerStart,
   },
   signalEmpty: {
     alignSelf: 'center',

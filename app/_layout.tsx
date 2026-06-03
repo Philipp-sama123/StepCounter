@@ -63,6 +63,13 @@ const RootNavigator = () => {
         }}
       />
       <Tabs.Screen
+        name="wank"
+        options={{
+          title: 'Wank',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="pulse-outline" size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="history"
         options={{
           href: null,

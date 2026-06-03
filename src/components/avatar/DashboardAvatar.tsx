@@ -16,6 +16,7 @@ import { COLORS } from '../../constants';
 import { readAvatarPreferenceFromFirestore } from '../../firebase/avatarPreference';
 
 type DashboardAvatarProps = {
+  caption?: string;
   state: AvatarAnimationKey;
   userId: string | null;
 };
@@ -24,7 +25,7 @@ const RING_SIZE = 154;
 const RING_STROKE = 9;
 const AVATAR_SIZE = 106;
 
-export const DashboardAvatar = ({ state, userId }: DashboardAvatarProps) => {
+export const DashboardAvatar = ({ caption, state, userId }: DashboardAvatarProps) => {
   const [selectedAvatarKey, setSelectedAvatarKey] = useState<AvatarVariantKey>(DEFAULT_AVATAR_VARIANT_KEY);
   const selectedVariant = AVATAR_VARIANTS.find((variant) => variant.key === selectedAvatarKey) ?? AVATAR_VARIANTS[0];
   const animation = selectedVariant.spritesheet.animations[state];
@@ -117,7 +118,7 @@ export const DashboardAvatar = ({ state, userId }: DashboardAvatarProps) => {
           )}
         </Animated.View>
       </View>
-      <Text style={styles.caption}>{`${selectedVariant.label} · ${getStateLabel(state)}`}</Text>
+      <Text style={styles.caption}>{caption ?? `${selectedVariant.label} · ${getStateLabel(state)}`}</Text>
     </View>
   );
 };

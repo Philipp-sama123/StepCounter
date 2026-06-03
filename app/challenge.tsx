@@ -8,6 +8,7 @@ import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../src/auth/AuthContext';
 import { AnimatedPressable } from '../src/components/AnimatedPressable';
 import { AnimatedStepCount } from '../src/components/AnimatedStepCount';
+import { DashboardAvatar } from '../src/components/avatar/DashboardAvatar';
 import { ChallengeReward, ChallengeRewardOverlay } from '../src/components/challenge/ChallengeRewardOverlay';
 import { ChallengeSourceTabs, ChallengeTrackingMode } from '../src/components/challenge/ChallengeSourceTabs';
 import { MovementInsightPanel } from '../src/components/challenge/MovementInsightPanel';
@@ -22,6 +23,7 @@ import { ToastMessageItem, ToastStack } from '../src/components/ToastMessage';
 import { AppButton } from '../src/components/ui/AppButton';
 import { MetricCard } from '../src/components/ui/MetricCard';
 import { SurfacePanel } from '../src/components/ui/SurfacePanel';
+import { AvatarAnimationKey } from '../src/config/avatarSprites';
 import { COLORS, DEFAULT_GOAL, STATUS_STOPPED_DELAY_MS } from '../src/constants';
 import { syncChallengeSession } from '../src/firebase/stepsSync';
 import { StepDataSource } from '../src/health/types';
@@ -350,6 +352,12 @@ export default function ChallengeScreen() {
     const modeHint = isLiveMode
         ? 'Live mode uses the same calculated detector as Debug: acceleration peaks, rotation filtering, cadence, and confidence.'
         : 'Health data mode reads the system total. Best for comparing against Google Fit / Health Connect.';
+    const challengeAvatarState = getChallengeAvatarState({
+        detectorDecision: calculatedStepCounter.detectorDecision,
+        isChallengeActive,
+        isLiveMode,
+        status,
+    });
 
     return (
         <AppScreen
@@ -416,6 +424,14 @@ export default function ChallengeScreen() {
                         style={styles.modeTabs}
                         value={trackingMode}
                     />
+
+                    <View style={styles.challengeAvatarPanel}>
+                        <DashboardAvatar
+                            caption={getChallengeAvatarCaption(challengeAvatarState, isChallengeActive, isLiveMode)}
+                            state={challengeAvatarState}
+                            userId={user?.uid ?? null}
+                        />
+                    </View>
 
                     <ProgressRing
                         caption={isChallengeActive ? 'of challenge goal' : 'of daily challenge goal'}
@@ -692,6 +708,42 @@ const getCalculatedGyroscopeLog = (samples: Array<{ rotationRadPerSecond: number
         timestamp: sample.timestamp,
     }));
 
+const getChallengeAvatarState = ({
+    detectorDecision,
+    isChallengeActive,
+    isLiveMode,
+    status,
+}: {
+    detectorDecision: string;
+    isChallengeActive: boolean;
+    isLiveMode: boolean;
+    status: WalkingStatus;
+}): AvatarAnimationKey => {
+    if (isLiveMode && detectorDecision === 'accepted') {
+        return 'run';
+    }
+
+    if (status === 'walking') {
+        return isChallengeActive ? 'run' : 'walk';
+    }
+
+    return 'idle';
+};
+
+const getChallengeAvatarCaption = (state: AvatarAnimationKey, isChallengeActive: boolean, isLiveMode: boolean): string => {
+    const sourceLabel = isLiveMode ? 'live sensor' : 'health data';
+
+    if (state === 'run') {
+        return isChallengeActive ? `${sourceLabel} challenge sprint` : `${sourceLabel} burst detected`;
+    }
+
+    if (state === 'walk') {
+        return `${sourceLabel} walking`;
+    }
+
+    return isChallengeActive ? `${sourceLabel} listening` : `${sourceLabel} ready`;
+};
+
 type DailyChallengeTotal = {
     date: string;
     sessions: number;
@@ -883,6 +935,9 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     modeTabs: {
+        marginBottom: 18,
+    },
+    challengeAvatarPanel: {
         marginBottom: 18,
     },
     stepBlock: {

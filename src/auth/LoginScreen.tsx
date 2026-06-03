@@ -142,10 +142,6 @@ export const LoginScreen = () => {
             <Text style={styles.forgotPasswordText}>Forgot password?</Text>
           </Pressable>
 
-          <View style={[styles.googleButton, styles.disabled]}>
-            <Text style={styles.googleButtonText}>Google sign-in coming next</Text>
-          </View>
-
           <Pressable
             disabled={isSubmitting}
             onPress={() => {
@@ -249,20 +245,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.button,
   },
   primaryButtonText: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  googleButton: {
-    minHeight: 52,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-  },
-  googleButtonText: {
     color: COLORS.text,
     fontSize: 16,
     fontWeight: '900',

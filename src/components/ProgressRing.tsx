@@ -296,7 +296,7 @@ export const ProgressRing = ({
             <Stop offset="1" stopColor={COLORS.avatarGradientEnd} />
           </LinearGradient>
           <LinearGradient id="ringOverflowGradient" x1="0" x2="1" y1="0" y2="1">
-            <Stop offset="0" stopColor={COLORS.progressOverflowStart} />
+            <Stop offset="0" stopColor={COLORS.avatarGradientEnd} />
             <Stop offset="1" stopColor={COLORS.progressOverflowEnd} />
           </LinearGradient>
         </Defs>
@@ -325,7 +325,7 @@ export const ProgressRing = ({
           <Svg height={size} style={styles.svg} width={size}>
             <Defs>
               <LinearGradient id="ringOverflowGradientLayer" x1="0" x2="1" y1="0" y2="1">
-                <Stop offset="0" stopColor={COLORS.progressOverflowStart} />
+                <Stop offset="0" stopColor={COLORS.avatarGradientEnd} />
                 <Stop offset="1" stopColor={COLORS.progressOverflowEnd} />
               </LinearGradient>
             </Defs>

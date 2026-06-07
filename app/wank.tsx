@@ -24,6 +24,7 @@ import {
   WankReplaySample,
   WankSession,
 } from '../src/storage/stepStorage';
+import { triggerSelectionHaptic } from '../src/utils/haptics';
 
 type MotionSample = {
   direction: SwingDirection;
@@ -55,7 +56,7 @@ const MIN_SWING_INTERVAL_MS = 170;
 const ACTIVE_HOLD_MS = 850;
 const MAX_GRAPH_SAMPLES = 34;
 const MAX_LOG_ENTRIES = 8;
-const MAX_REPLAY_SAMPLES = 900;
+const REPLAY_SAMPLE_INTERVAL_MS = 180;
 
 export default function WankChallengeScreen() {
   const isFocused = useIsFocused();
@@ -88,6 +89,7 @@ export default function WankChallengeScreen() {
   const replayTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rotationTotalRef = useRef(0);
   const sessionBestComboRef = useRef(0);
+  const sessionLastReplaySampleAtRef = useRef(0);
   const sessionStartAtRef = useRef<number | null>(null);
   const sessionStartSwingCountRef = useRef(0);
   const swingCountRef = useRef(0);
@@ -125,7 +127,7 @@ export default function WankChallengeScreen() {
   }, [scoreScale]);
 
   useEffect(() => {
-    if (!isFocused) {
+    if (!isFocused || !isRunning) {
       return undefined;
     }
 
@@ -174,7 +176,10 @@ export default function WankChallengeScreen() {
         motionSampleCountRef.current += 1;
         motionTotalRef.current += nextMotionG;
         rotationTotalRef.current += nextRotationRadPerSecond;
-        replaySamplesRef.current = [...replaySamplesRef.current.slice(-(MAX_REPLAY_SAMPLES - 1)), replaySample];
+        if (shouldStoreReplaySample(now, sessionLastReplaySampleAtRef.current, passed)) {
+          sessionLastReplaySampleAtRef.current = now;
+          replaySamplesRef.current = [...replaySamplesRef.current, replaySample];
+        }
       }
       setMotionG(nextMotionG);
       setSamples((currentSamples) =>
@@ -226,6 +231,7 @@ export default function WankChallengeScreen() {
             ...currentLog,
           ].slice(0, MAX_LOG_ENTRIES),
         );
+        triggerSelectionHaptic();
         animateScore();
       }
 
@@ -241,7 +247,7 @@ export default function WankChallengeScreen() {
       accelerometerSubscription?.remove();
       gyroscopeSubscription?.remove();
     };
-  }, [animateScore, isFocused]);
+  }, [animateScore, isFocused, isRunning]);
 
   const handleToggle = async (): Promise<void> => {
     if (isReplaying) {
@@ -250,26 +256,17 @@ export default function WankChallengeScreen() {
 
     if (isRunning) {
       await saveCurrentSession();
+      isRunningRef.current = false;
       setIsRunning(false);
-      currentComboRef.current = 0;
-      setCurrentCombo(0);
+      resetSessionState({ clearScore: false });
       return;
     }
 
-    setIsRunning((currentValue) => !currentValue);
-    currentComboRef.current = 0;
-    lastAcceptedAtRef.current = 0;
-    lastDirectionRef.current = 'still';
-    motionSampleCountRef.current = 0;
-    motionTotalRef.current = 0;
-    replayEventsRef.current = [];
-    replaySamplesRef.current = [];
-    rotationTotalRef.current = 0;
-    sessionBestComboRef.current = 0;
+    resetSessionState({ clearScore: false });
     sessionStartAtRef.current = Date.now();
     sessionStartSwingCountRef.current = swingCountRef.current;
-    setCurrentCombo(0);
-    setSwingLog([]);
+    isRunningRef.current = true;
+    setIsRunning(true);
   };
 
   const saveCurrentSession = async (): Promise<void> => {
@@ -298,7 +295,7 @@ export default function WankChallengeScreen() {
     await loadHistory();
   };
 
-  const handleReset = (): void => {
+  const resetSessionState = ({ clearScore }: { clearScore: boolean }): void => {
     currentComboRef.current = 0;
     lastAcceptedAtRef.current = 0;
     lastDirectionRef.current = 'still';
@@ -308,18 +305,33 @@ export default function WankChallengeScreen() {
     replaySamplesRef.current = [];
     rotationTotalRef.current = 0;
     sessionBestComboRef.current = 0;
+    sessionLastReplaySampleAtRef.current = 0;
     sessionStartAtRef.current = null;
     sessionStartSwingCountRef.current = 0;
-    swingCountRef.current = 0;
-    setBestCombo(0);
     setCurrentCombo(0);
-    setSwingCount(0);
     setSwingLog([]);
+
+    if (clearScore) {
+      swingCountRef.current = 0;
+      setBestCombo(0);
+      setSwingCount(0);
+      setMotionG(0);
+      setRotationRadPerSecond(0);
+      setSamples([]);
+    }
+  };
+
+  const handleReset = (): void => {
+    stopReplay();
+    isRunningRef.current = false;
+    setIsRunning(false);
+    resetSessionState({ clearScore: true });
   };
 
   const stopReplay = (): void => {
     clearReplayTimeouts(replayTimeoutsRef.current);
     replayTimeoutsRef.current = [];
+    isReplayingRef.current = false;
     setIsReplaying(false);
     setAvatarState('idle');
   };
@@ -332,7 +344,9 @@ export default function WankChallengeScreen() {
 
     if (isRunning) {
       await saveCurrentSession();
+      isRunningRef.current = false;
       setIsRunning(false);
+      resetSessionState({ clearScore: false });
     }
 
     const allSessions = await readAllWankSessions();
@@ -386,6 +400,7 @@ export default function WankChallengeScreen() {
         },
         ...currentLog,
       ].slice(0, MAX_LOG_ENTRIES));
+      triggerSelectionHaptic();
       animateScore();
     }, event.offsetMs)) ?? [];
 
@@ -740,6 +755,9 @@ const getThresholdLineOffset = (value: number, maxValue: number): number => Math
 const getVectorMagnitude = (x: number, y: number, z: number): number => Math.sqrt(x * x + y * y + z * z);
 
 const getRelativeHeight = (value: number, maxValue: number): number => Math.max(5, Math.min(100, (value / Math.max(1, maxValue)) * 100));
+
+const shouldStoreReplaySample = (now: number, previousSampleAt: number, passed: boolean): boolean =>
+  passed || previousSampleAt === 0 || now - previousSampleAt >= REPLAY_SAMPLE_INTERVAL_MS;
 
 const clearReplayTimeouts = (timeouts: Array<ReturnType<typeof setTimeout>>): void => {
   timeouts.forEach((timeout) => clearTimeout(timeout));

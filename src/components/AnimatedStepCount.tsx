@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, TextStyle } from 'react-native';
+import { Animated } from 'react-native';
+
+import type { TextStyle } from 'react-native';
 
 type AnimatedStepCountProps = {
   replayKey?: number;
@@ -97,5 +99,9 @@ export const AnimatedStepCount = ({ replayKey = 0, steps, style }: AnimatedStepC
     });
   }, [animatedSteps, replayKey, steps]);
 
-  return <Animated.Text style={[style, { opacity: blinkOpacity, transform: [{ scale: bounceScale }] }]}>{displaySteps.toLocaleString()}</Animated.Text>;
+  return (
+    <Animated.Text style={[style, { opacity: blinkOpacity, transform: [{ scale: bounceScale }] }]}>
+      {displaySteps.toLocaleString()}
+    </Animated.Text>
+  );
 };

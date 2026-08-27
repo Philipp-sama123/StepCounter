@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../constants';
-import { getBmi, UserBodyProfile } from '../storage/profileStorage';
+import { getBmi } from '../storage/profileStorage';
 import { triggerSelectionHaptic } from '../utils/haptics';
+
+import type { UserBodyProfile } from '../features/profile/domain/models';
 
 type ProfileModalProps = {
   isVisible: boolean;
@@ -112,7 +114,12 @@ export const ProfileModal = ({ isVisible, onClose, onSave, profile }: ProfileMod
           </View>
 
           <View style={styles.actions}>
-            <Pressable accessibilityRole="button" onPress={onClose} onPressIn={triggerSelectionHaptic} style={[styles.button, styles.secondaryButton]}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              onPressIn={triggerSelectionHaptic}
+              style={[styles.button, styles.secondaryButton]}
+            >
               <Text style={styles.secondaryButtonText}>Cancel</Text>
             </Pressable>
             <Pressable

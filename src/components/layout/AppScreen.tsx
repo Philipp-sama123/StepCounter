@@ -1,10 +1,13 @@
-import { ReactNode } from 'react';
-import { ScrollView, StyleProp, StyleSheet, ViewStyle } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { ScrollView, StyleSheet } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { THEME } from '../../constants';
+
 import { BackgroundGradient } from './BackgroundGradient';
+
+import type { ReactNode } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 type AppScreenProps = {
   children: ReactNode;

@@ -1,7 +1,9 @@
-import { ReactNode } from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { COLORS, THEME } from '../../constants';
+
+import type { ReactNode } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 type SurfacePanelProps = {
   children: ReactNode;

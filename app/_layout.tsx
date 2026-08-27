@@ -2,15 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { AuthProvider, useAuth } from '../src/auth/AuthContext';
+import { useAuth } from '../src/auth/AuthContext';
 import { LoginScreen } from '../src/auth/LoginScreen';
 import { COLORS, THEME } from '../src/constants';
+import { AppProviders } from '../src/providers/AppProviders';
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
+    <AppProviders>
       <RootNavigator />
-    </AuthProvider>
+    </AppProviders>
   );
 }
 

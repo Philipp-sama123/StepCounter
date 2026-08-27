@@ -1,9 +1,13 @@
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
 
+import { isStepDataSource } from '../features/steps/domain/models';
+import { getRecentDateStrings } from '../shared/date/localDate';
+
 import { firestore } from './config';
-import { readChallengeSessionsFromFirestore, readDailyStepsFromFirestore, StoredChallengeSession } from './stepsSync';
-import { StepDataSource } from '../health/types';
-import { getTodayString } from '../storage/stepStorage';
+import { readChallengeSessionsFromFirestore, readDailyStepsFromFirestore } from './stepsSync';
+
+import type { StoredChallengeSession } from '../features/challenges/domain/models';
+import type { StepDataSource } from '../health/types';
 
 export type SharedDailyStepEntry = {
   challengeSessionCount?: number;
@@ -53,35 +57,49 @@ export const publishSharedProfile = async ({
     ]);
     const shareRef = doc(firestore, 'sharedProfiles', code);
 
-    await setDoc(shareRef, {
-      code,
-      displayName,
-      ownerId: userId,
-      publishedAt: serverTimestamp(),
-    }, { merge: true });
+    await setDoc(
+      shareRef,
+      {
+        code,
+        displayName,
+        ownerId: userId,
+        publishedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
 
     await Promise.all([
       ...dates.map((date) => {
         const entry = dailyStepsByDate[date];
-        return setDoc(doc(shareRef, 'dailySteps', date), {
-          challengeSessionCount: entry?.challengeSessionCount ?? 0,
-          date,
-          goal: entry?.goal ?? 0,
-          paceStepsPerMinute: entry?.paceStepsPerMinute ?? 0,
-          source: entry?.source ?? 'unavailable',
-          steps: entry?.steps ?? 0,
-          walkingTimeMs: entry?.walkingTimeMs ?? 0,
-        }, { merge: true });
+        return setDoc(
+          doc(shareRef, 'dailySteps', date),
+          {
+            challengeSessionCount: entry?.challengeSessionCount ?? 0,
+            date,
+            goal: entry?.goal ?? 0,
+            paceStepsPerMinute: entry?.paceStepsPerMinute ?? 0,
+            source: entry?.source ?? 'unavailable',
+            steps: entry?.steps ?? 0,
+            walkingTimeMs: entry?.walkingTimeMs ?? 0,
+          },
+          { merge: true },
+        );
       }),
-      ...sessions.slice(0, 30).map((session) => setDoc(doc(shareRef, 'challengeSessions', getSharedSessionId(session)), {
-        challengeGoal: session.challengeGoal ?? null,
-        date: session.date,
-        durationMs: session.durationMs,
-        endedAt: session.endedAt,
-        source: session.source ?? 'live-sensor',
-        startedAt: session.startedAt,
-        steps: session.steps,
-      }, { merge: true })),
+      ...sessions.slice(0, 30).map((session) =>
+        setDoc(
+          doc(shareRef, 'challengeSessions', getSharedSessionId(session)),
+          {
+            challengeGoal: session.challengeGoal ?? null,
+            date: session.date,
+            durationMs: session.durationMs,
+            endedAt: session.endedAt,
+            source: session.source ?? 'live-sensor',
+            startedAt: session.startedAt,
+            steps: session.steps,
+          },
+          { merge: true },
+        ),
+      ),
     ]);
 
     return { code, ok: true, message: `Share code ${code} is ready.` };
@@ -123,7 +141,8 @@ export const readSharedProfile = async (code: string): Promise<SharedProfileData
           const date = typeof entry.date === 'string' ? entry.date : dailyDoc.id;
           const steps = typeof entry.steps === 'number' ? entry.steps : 0;
           return {
-            challengeSessionCount: typeof entry.challengeSessionCount === 'number' ? entry.challengeSessionCount : undefined,
+            challengeSessionCount:
+              typeof entry.challengeSessionCount === 'number' ? entry.challengeSessionCount : undefined,
             date,
             goal: typeof entry.goal === 'number' ? entry.goal : undefined,
             paceStepsPerMinute: typeof entry.paceStepsPerMinute === 'number' ? entry.paceStepsPerMinute : undefined,
@@ -167,16 +186,5 @@ export const readSharedProfile = async (code: string): Promise<SharedProfileData
   }
 };
 
-const getRecentDateStrings = (days: number): string[] => {
-  const today = new Date(getTodayString());
-  return Array.from({ length: days }, (_, index) => {
-    const date = new Date(today.getTime() - (days - 1 - index) * 24 * 60 * 60 * 1000);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  });
-};
-
 const getSharedSessionId = (session: StoredChallengeSession): string =>
   `${session.date}_${session.startedAt.replace(/[^a-zA-Z0-9-]/g, '-')}`;
-
-const isStepDataSource = (value: unknown): value is StepDataSource =>
-  value === 'apple-health' || value === 'health-connect' || value === 'live-sensor' || value === 'unavailable';

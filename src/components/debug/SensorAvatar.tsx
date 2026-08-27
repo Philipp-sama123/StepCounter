@@ -1,21 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { Animated, Image, ImageSourcePropType, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
+import { AVATAR_STORAGE_KEY, AVATAR_VARIANTS, DEFAULT_AVATAR_VARIANT_KEY } from '../../config/avatarSprites';
+import { COLORS } from '../../constants';
+import { readAvatarPreferenceFromFirestore } from '../../firebase/avatarPreference';
+import { userScopedStorage as AsyncStorage } from '../../platform/storage/userScopedStorage';
 import { AnimatedPressable } from '../AnimatedPressable';
-import {
-  AVATAR_STORAGE_KEY,
-  AVATAR_VARIANTS,
+
+import type {
   AvatarAnimationConfig,
   AvatarAnimationKey,
   AvatarSpritesheetConfig,
   AvatarVariantKey,
-  DEFAULT_AVATAR_VARIANT_KEY,
 } from '../../config/avatarSprites';
-import { COLORS } from '../../constants';
-import { readAvatarPreferenceFromFirestore } from '../../firebase/avatarPreference';
+import type { ImageSourcePropType } from 'react-native';
 
 type SensorAvatarProps = {
   cadenceStepsPerMinute: number;
@@ -243,7 +243,12 @@ const AvatarStage = ({
         strokeWidth={ringStroke}
       />
     </Svg>
-    <Animated.View style={[styles.avatarFrame, { borderRadius: avatarSize / 2, height: avatarSize, transform: [{ scale: pulseScale }], width: avatarSize }]}>
+    <Animated.View
+      style={[
+        styles.avatarFrame,
+        { borderRadius: avatarSize / 2, height: avatarSize, transform: [{ scale: pulseScale }], width: avatarSize },
+      ]}
+    >
       {animation.source === null ? (
         <FallbackAvatar animationKey={animationKey} size={avatarSize} />
       ) : (
@@ -276,19 +281,29 @@ const SpriteFrame = ({ animation, avatarSize, frameHeight, frameIndex, frameWidt
       resizeMode="stretch"
       resizeMethod="resize"
       source={source}
-      style={{
-        height: (avatarSize / frameHeight) * frameHeight,
-        imageRendering: 'pixelated',
-        transform: [{ translateX: -frameIndex * avatarSize }],
-        width: (avatarSize / frameWidth) * frameWidth * animation.frameCount,
-      } as object}
+      style={
+        {
+          height: (avatarSize / frameHeight) * frameHeight,
+          imageRendering: 'pixelated',
+          transform: [{ translateX: -frameIndex * avatarSize }],
+          width: (avatarSize / frameWidth) * frameWidth * animation.frameCount,
+        } as object
+      }
     />
   </View>
 );
 
 const FallbackAvatar = ({ animationKey, size }: { animationKey: AvatarAnimationKey; size: number }) => (
-  <View style={[styles.fallbackAvatar, styles[`${animationKey}Avatar`], { borderRadius: size / 2, height: size, width: size }]}>
-    <Text style={[styles.fallbackFace, { fontSize: size * 0.5 }]}>{animationKey === 'idle' ? '*' : animationKey === 'walk' ? '>' : '>>'}</Text>
+  <View
+    style={[
+      styles.fallbackAvatar,
+      styles[`${animationKey}Avatar`],
+      { borderRadius: size / 2, height: size, width: size },
+    ]}
+  >
+    <Text style={[styles.fallbackFace, { fontSize: size * 0.5 }]}>
+      {animationKey === 'idle' ? '*' : animationKey === 'walk' ? '>' : '>>'}
+    </Text>
   </View>
 );
 
@@ -349,7 +364,8 @@ const getAvatarAnimationKey = ({
   elapsedMsSinceStep: number | null;
   motionG: number;
 }): AvatarAnimationKey => {
-  const isRecentlyMoving = detectorDecision === 'accepted' || (elapsedMsSinceStep !== null && elapsedMsSinceStep < STOPPED_AFTER_MS);
+  const isRecentlyMoving =
+    detectorDecision === 'accepted' || (elapsedMsSinceStep !== null && elapsedMsSinceStep < STOPPED_AFTER_MS);
 
   if (!isRecentlyMoving) {
     return 'idle';

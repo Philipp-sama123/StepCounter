@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { Animated, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
 import { COLORS } from '../constants';
-import { getBmi, UserBodyProfile, WeightEntry } from '../storage/profileStorage';
+import { getBmi } from '../storage/profileStorage';
+
+import type { UserBodyProfile, WeightEntry } from '../features/profile/domain/models';
 
 type WeightTrendChartProps = {
   animationKey?: number;
@@ -20,20 +22,25 @@ const BOTTOM_PADDING = 24;
 
 export const WeightTrendChart = ({ animationKey = 0, entries, profile }: WeightTrendChartProps) => {
   const bmi = profile === null ? 0 : getBmi(profile.heightCm, profile.currentWeightKg);
-  const bmiEntries = profile === null
-    ? []
-    : entries.map((entry) => ({
-      date: entry.date,
-      timestamp: entry.timestamp,
-      value: getBmi(profile.heightCm, entry.weightKg),
-    })).filter((entry) => entry.value > 0);
+  const bmiEntries =
+    profile === null
+      ? []
+      : entries
+          .map((entry) => ({
+            date: entry.date,
+            timestamp: entry.timestamp,
+            value: getBmi(profile.heightCm, entry.weightKg),
+          }))
+          .filter((entry) => entry.value > 0);
 
   return (
     <View style={styles.panel}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Body profile</Text>
-          <Text style={styles.subtitle}>{profile?.weightTrackingEnabled ? 'Weight tracking enabled' : 'Weight tracking disabled'}</Text>
+          <Text style={styles.subtitle}>
+            {profile?.weightTrackingEnabled ? 'Weight tracking enabled' : 'Weight tracking disabled'}
+          </Text>
         </View>
         <View style={styles.bmiBadge}>
           <Text style={styles.bmiLabel}>BMI</Text>
@@ -71,7 +78,7 @@ export const WeightTrendChart = ({ animationKey = 0, entries, profile }: WeightT
 
 type TrendGraphProps = {
   animationKey: number;
-  entries: Array<{ date: string; timestamp?: string; value: number }>;
+  entries: { date: string; timestamp?: string; value: number }[];
   formatValue: (value: number) => string;
   gradientId: string;
   lineColor: string;
@@ -95,9 +102,10 @@ const TrendGraph = ({ animationKey, entries, formatValue, gradientId, lineColor,
     y: TOP_PADDING + plotHeight * (1 - (entry.value - minValue) / range),
   }));
   const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-  const areaPath = points.length === 0
-    ? ''
-    : `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
+  const areaPath =
+    points.length === 0
+      ? ''
+      : `${linePath} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`;
   const revealStyle = {
     width: revealAnimation.interpolate({
       inputRange: [0, 1],
@@ -138,8 +146,23 @@ const TrendGraph = ({ animationKey, entries, formatValue, gradientId, lineColor,
                     </LinearGradient>
                   </Defs>
                   <Path d={areaPath} fill={`url(#${gradientId})`} />
-                  <Path d={linePath} fill="none" opacity={0.16} stroke={lineColor} strokeLinecap="round" strokeLinejoin="round" strokeWidth={10} />
-                  <Path d={linePath} fill="none" stroke={lineColor} strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} />
+                  <Path
+                    d={linePath}
+                    fill="none"
+                    opacity={0.16}
+                    stroke={lineColor}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={10}
+                  />
+                  <Path
+                    d={linePath}
+                    fill="none"
+                    stroke={lineColor}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={4}
+                  />
                 </Svg>
               </View>
             </Animated.View>
@@ -162,12 +185,14 @@ const TrendGraph = ({ animationKey, entries, formatValue, gradientId, lineColor,
                       left: point.x - 5,
                       opacity: pointProgress,
                       top: point.y - 5,
-                      transform: [{
-                        scale: pointProgress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.4, 1],
-                        }),
-                      }],
+                      transform: [
+                        {
+                          scale: pointProgress.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.4, 1],
+                          }),
+                        },
+                      ],
                     },
                   ]}
                 />

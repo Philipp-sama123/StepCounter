@@ -2,6 +2,7 @@
 
 # dependencies
 node_modules/
+.npm-cache/
 
 # Expo
 .expo/
@@ -36,14 +37,12 @@ yarn-error.*
 !.env.example
 .env*.local
 
-# local Firebase rules
-firestore.rules
-
 # local documentation notes
 docs/
 
 # typescript
 *.tsbuildinfo
+coverage/
 
 # generated native folders
 /ios

@@ -1,8 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { COLORS } from '../../constants';
-import { StepDataSource } from '../../health/types';
-import { SyncDiagnosticEntry } from '../../services/syncDiagnostics';
+
+import type { StepDataSource } from '../../health/types';
+import type { SyncDiagnosticEntry } from '../../services/syncDiagnostics';
 
 type SyncDiagnosticRowProps = {
   entry: SyncDiagnosticEntry;
@@ -15,11 +16,13 @@ export const SyncDiagnosticRow = ({ entry }: SyncDiagnosticRowProps) => (
         <Text style={styles.auditDate}>{entry.date}</Text>
         <Text style={styles.auditTime}>{formatLogTime(entry.timestamp)}</Text>
       </View>
-      <Text style={[
-        styles.auditStatus,
-        entry.status === 'changed' ? styles.auditStatusChanged : null,
-        entry.status === 'failed' ? styles.auditStatusFailed : null,
-      ]}>
+      <Text
+        style={[
+          styles.auditStatus,
+          entry.status === 'changed' ? styles.auditStatusChanged : null,
+          entry.status === 'failed' ? styles.auditStatusFailed : null,
+        ]}
+      >
         {entry.status}
       </Text>
     </View>
@@ -39,14 +42,14 @@ const AuditMetric = ({ label, value }: { label: string; value: string }) => (
   </View>
 );
 
-const formatLogTime = (timestamp: string): string => new Date(timestamp).toLocaleTimeString(undefined, {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
+const formatLogTime = (timestamp: string): string =>
+  new Date(timestamp).toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 
-const formatNullableSteps = (steps: number | null): string =>
-  steps === null ? '-' : steps.toLocaleString();
+const formatNullableSteps = (steps: number | null): string => (steps === null ? '-' : steps.toLocaleString());
 
 const getSourceLabel = (source: StepDataSource): string => {
   if (source === 'apple-health') {

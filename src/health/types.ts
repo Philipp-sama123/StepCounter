@@ -1,15 +1,1 @@
-export type StepDataSource = 'apple-health' | 'health-connect' | 'live-sensor' | 'unavailable';
-
-export type StepTrackingMode = 'live' | 'system' | 'combined';
-
-export type SystemStepResult =
-  | {
-      available: true;
-      source: Exclude<StepDataSource, 'live-sensor' | 'unavailable'>;
-      steps: number;
-    }
-  | {
-      available: false;
-      reason: string;
-      source: 'unavailable';
-    };
+export type { StepDataSource, StepTrackingMode, SystemStepResult } from '../features/steps/domain/models';

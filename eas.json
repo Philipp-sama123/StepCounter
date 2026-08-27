@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 19.0.5"
+    "version": ">= 19.0.5",
+    "appVersionSource": "local"
   },
   "build": {
     "preview": {
@@ -11,6 +12,7 @@
       "environment": "preview"
     },
     "production": {
+      "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },

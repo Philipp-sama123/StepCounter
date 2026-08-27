@@ -1,9 +1,12 @@
+import { onAuthStateChanged } from '@firebase/auth';
 import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
-import { onAuthStateChanged, User } from '@firebase/auth';
 
 import { firebaseAuth } from '../firebase/config';
+import { activateUserStorage } from '../platform/storage/userScopedStorage';
 import { syncTodayAndBackfill } from '../services/syncService';
+
+import type { User } from '@firebase/auth';
 
 const BACKGROUND_STEP_SYNC_TASK = 'background-step-sync';
 const BACKGROUND_STEP_SYNC_INTERVAL_MINUTES = 60;
@@ -41,6 +44,7 @@ TaskManager.defineTask(BACKGROUND_STEP_SYNC_TASK, async () => {
       return BackgroundTask.BackgroundTaskResult.Success;
     }
 
+    await activateUserStorage(user.uid);
     const result = await syncTodayAndBackfill({
       userId: user.uid,
     });

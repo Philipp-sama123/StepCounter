@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-import {
-  COLORS,
-  HOME_PROGRESS_RING_PADDING,
-  HOME_PROGRESS_RING_SIZE,
-  HOME_PROGRESS_RING_WIDTH,
-} from '../constants';
+import { COLORS, HOME_PROGRESS_RING_PADDING, HOME_PROGRESS_RING_SIZE, HOME_PROGRESS_RING_WIDTH } from '../constants';
 import { triggerSuccessHaptic } from '../utils/haptics';
 
 type ProgressRingProps = {
@@ -192,14 +187,13 @@ export const ProgressRing = ({
         }
 
         playFullFeedback();
-        Animated.sequence([
-          Animated.delay(targetOverflowProgress > 0 ? 110 : 0),
-          overflowAnimation,
-        ]).start(({ finished: overflowFinished }) => {
-          if (overflowFinished && targetOverflowProgress > 0) {
-            playOverflowFeedback();
-          }
-        });
+        Animated.sequence([Animated.delay(targetOverflowProgress > 0 ? 110 : 0), overflowAnimation]).start(
+          ({ finished: overflowFinished }) => {
+            if (overflowFinished && targetOverflowProgress > 0) {
+              playOverflowFeedback();
+            }
+          },
+        );
       });
     } else {
       Animated.parallel([progressAnimation, overflowAnimation]).start(({ finished }) => {
@@ -214,7 +208,16 @@ export const ProgressRing = ({
     }
 
     previousSteps.current = steps;
-  }, [animatedOverflowProgress, animatedProgress, goal, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
+  }, [
+    animatedOverflowProgress,
+    animatedProgress,
+    goal,
+    resetAnimationKey,
+    steps,
+    targetOverflowProgress,
+    targetProgress,
+    targetRatio,
+  ]);
 
   useEffect(() => {
     if (resetAnimationKey === resetAnimationKeyRef.current) {
@@ -261,7 +264,16 @@ export const ProgressRing = ({
 
     playGainAnimation(200);
     previousSteps.current = steps;
-  }, [animatedOverflowProgress, animatedProgress, goal, resetAnimationKey, steps, targetOverflowProgress, targetProgress, targetRatio]);
+  }, [
+    animatedOverflowProgress,
+    animatedProgress,
+    goal,
+    resetAnimationKey,
+    steps,
+    targetOverflowProgress,
+    targetProgress,
+    targetRatio,
+  ]);
 
   const isComplete = steps >= goal;
   const baseDisplayRatio = Math.min(displayRatio, 1);
@@ -285,9 +297,21 @@ export const ProgressRing = ({
   const shouldShowOverflow = steps > goal && goal > 0;
 
   return (
-    <Animated.View style={[styles.ring, { borderRadius: size / 2, height: size, width: size, transform: [{ scale: ringScale }] }]}>
-      <Animated.View style={[styles.fullPulse, { borderRadius: size / 2, opacity: fullPulseOpacity, transform: [{ scale: fullPulseScale }] }]} />
-      <Animated.View style={[styles.overflowPulse, { borderRadius: size / 2, opacity: overflowPulseOpacity, transform: [{ scale: overflowPulseScale }] }]} />
+    <Animated.View
+      style={[styles.ring, { borderRadius: size / 2, height: size, width: size, transform: [{ scale: ringScale }] }]}
+    >
+      <Animated.View
+        style={[
+          styles.fullPulse,
+          { borderRadius: size / 2, opacity: fullPulseOpacity, transform: [{ scale: fullPulseScale }] },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.overflowPulse,
+          { borderRadius: size / 2, opacity: overflowPulseOpacity, transform: [{ scale: overflowPulseScale }] },
+        ]}
+      />
       <Svg height={size} style={styles.svg} width={size}>
         <Defs>
           <LinearGradient id="ringProgressGradient" x1="0" x2="1" y1="0" y2="1">

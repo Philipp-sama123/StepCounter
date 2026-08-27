@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "StepCounter",
-    "slug": "StepCounter",
+    "slug": "pippo",
     "scheme": "stepcounter",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -26,18 +26,15 @@
       "bundleIdentifier": "com.philipp.stepcounter"
     },
     "android": {
-      "permissions": [
-        "ACTIVITY_RECOGNITION",
-        "android.permission.health.READ_STEPS",
-        "VIBRATE"
-      ],
+      "permissions": ["ACTIVITY_RECOGNITION", "android.permission.health.READ_STEPS", "VIBRATE"],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.philipp.stepcounter"
+      "package": "com.philipp.stepcounter",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -63,6 +60,13 @@
       ],
       "expo-font",
       "expo-background-task"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "391effcf-45cf-4a87-8c49-7dc83fd68f24"
+      }
+    },
+    "owner": "pippogonzalezs-team"
   }
 }

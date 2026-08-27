@@ -1,7 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LAST_SEVEN_DAYS } from '../constants';
+import { userScopedStorage as AsyncStorage } from '../platform/storage/userScopedStorage';
+import { getRecentDateStrings } from '../shared/date/localDate';
 
-import { LAST_SEVEN_DAYS, ONE_DAY_MS } from '../constants';
-import { getTodayString, StepHistoryEntry } from './stepStorage';
+import type { StepHistoryEntry } from '../features/steps/domain/models';
 
 const CALCULATED_STEP_HISTORY_KEY_PREFIX = 'calculated-steps:';
 
@@ -34,11 +35,7 @@ export const saveCalculatedStepsForDate = async (date: string, steps: number): P
 };
 
 export const readCalculatedStepHistory = async (days = LAST_SEVEN_DAYS): Promise<StepHistoryEntry[]> => {
-  const today = new Date(getTodayString());
-  const dates = Array.from({ length: days }, (_, index) => {
-    const date = new Date(today.getTime() - (days - 1 - index) * ONE_DAY_MS);
-    return getLocalDateString(date);
-  });
+  const dates = getRecentDateStrings(days);
 
   try {
     const values = await AsyncStorage.multiGet(dates.map(getCalculatedStepsKey));
@@ -56,11 +53,4 @@ export const readCalculatedStepHistory = async (days = LAST_SEVEN_DAYS): Promise
       steps: 0,
     }));
   }
-};
-
-const getLocalDateString = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 };

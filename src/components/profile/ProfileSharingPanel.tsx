@@ -51,10 +51,16 @@ export const ProfileSharingPanel = ({
       onPress={onPublish}
       variant="warning"
     >
-      <Animated.View style={{ transform: [{ rotate: shareSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
+      <Animated.View
+        style={{
+          transform: [{ rotate: shareSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+        }}
+      >
         <Ionicons color={COLORS.text} name={isSharing ? 'sync-outline' : 'share-social-outline'} size={18} />
       </Animated.View>
-      <Text style={styles.buttonText}>{isSharing ? 'Publishing...' : shareCode === null ? 'Create share code' : 'Refresh shared data'}</Text>
+      <Text style={styles.buttonText}>
+        {isSharing ? 'Publishing...' : shareCode === null ? 'Create share code' : 'Refresh shared data'}
+      </Text>
     </AppButton>
 
     <View style={styles.importGroup}>
@@ -69,13 +75,12 @@ export const ProfileSharingPanel = ({
         textAlign="center"
         value={importCode}
       />
-      <AppButton
-        accessibilityLabel="Import share code"
-        busy={isImporting}
-        label="Import"
-        onPress={onImport}
-      >
-        <Animated.View style={{ transform: [{ rotate: importSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
+      <AppButton accessibilityLabel="Import share code" busy={isImporting} label="Import" onPress={onImport}>
+        <Animated.View
+          style={{
+            transform: [{ rotate: importSpin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }],
+          }}
+        >
           <Ionicons color={COLORS.text} name={isImporting ? 'sync-outline' : 'download-outline'} size={18} />
         </Animated.View>
         <Text style={styles.buttonText}>{isImporting ? 'Importing...' : 'Import'}</Text>

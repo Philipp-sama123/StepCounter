@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { userScopedStorage as AsyncStorage } from '../platform/storage/userScopedStorage';
 
 const IMPORTED_SHARE_CODE_KEY = 'share:imported-code';
 const IMPORTED_SHARE_PROFILES_KEY = 'share:imported-profiles';
@@ -11,7 +11,11 @@ export type ImportedShareProfile = {
   importedAt: string;
 };
 
-const normalizeShareCode = (code: string): string => code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+const normalizeShareCode = (code: string): string =>
+  code
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
 
 export const readImportedShareProfiles = async (): Promise<ImportedShareProfile[]> => {
   try {
@@ -22,16 +26,17 @@ export const readImportedShareProfiles = async (): Promise<ImportedShareProfile[
     const parsedProfiles = rawProfiles === null ? [] : JSON.parse(rawProfiles);
     const profiles = Array.isArray(parsedProfiles)
       ? parsedProfiles
-        .map((profile): ImportedShareProfile | null => {
-          const code = typeof profile?.code === 'string' ? normalizeShareCode(profile.code) : '';
-          const displayName = typeof profile?.displayName === 'string' && profile.displayName.trim().length > 0
-            ? profile.displayName.trim()
-            : code;
-          const importedAt = typeof profile?.importedAt === 'string' ? profile.importedAt : new Date().toISOString();
+          .map((profile): ImportedShareProfile | null => {
+            const code = typeof profile?.code === 'string' ? normalizeShareCode(profile.code) : '';
+            const displayName =
+              typeof profile?.displayName === 'string' && profile.displayName.trim().length > 0
+                ? profile.displayName.trim()
+                : code;
+            const importedAt = typeof profile?.importedAt === 'string' ? profile.importedAt : new Date().toISOString();
 
-          return code.length === 0 ? null : { code, displayName, importedAt };
-        })
-        .filter((profile): profile is ImportedShareProfile => profile !== null)
+            return code.length === 0 ? null : { code, displayName, importedAt };
+          })
+          .filter((profile): profile is ImportedShareProfile => profile !== null)
       : [];
 
     if (legacyCode !== null) {

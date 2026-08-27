@@ -1,8 +1,13 @@
 import { Platform } from 'react-native';
 
 import { readStepsForDateFromAppleHealth, readTodayStepsFromAppleHealth } from './appleHealth';
-import { readStepsForDateFromHealthConnect, readStepsForDatesFromHealthConnect, readTodayStepsFromHealthConnect } from './healthConnect';
-import { SystemStepResult } from './types';
+import {
+  readStepsForDateFromHealthConnect,
+  readStepsForDatesFromHealthConnect,
+  readTodayStepsFromHealthConnect,
+} from './healthConnect';
+
+import type { SystemStepResult } from './types';
 
 export const readTodayStepsFromSystemHealth = async (): Promise<SystemStepResult> => {
   if (Platform.OS === 'ios') {
@@ -41,9 +46,8 @@ export const readStepsForDatesFromSystemHealth = async (dates: string[]): Promis
     return readStepsForDatesFromHealthConnect(dates);
   }
 
-  const entries = await Promise.all(dates.map(async (date) => [
-    date,
-    await readStepsForDateFromSystemHealth(date),
-  ] as const));
+  const entries = await Promise.all(
+    dates.map(async (date) => [date, await readStepsForDateFromSystemHealth(date)] as const),
+  );
   return Object.fromEntries(entries);
 };

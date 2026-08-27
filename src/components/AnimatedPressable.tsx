@@ -1,16 +1,16 @@
-import { ReactNode, useEffect, useRef } from 'react';
-import {
-  Animated,
+import { useEffect, useRef } from 'react';
+import { Animated, Pressable, StyleSheet } from 'react-native';
+
+import { triggerSelectionHaptic } from '../utils/haptics';
+
+import type { ReactNode } from 'react';
+import type {
   GestureResponderEvent,
-  Pressable,
   PressableProps,
   PressableStateCallbackType,
-  StyleSheet,
   StyleProp,
   ViewStyle,
 } from 'react-native';
-
-import { triggerSelectionHaptic } from '../utils/haptics';
 
 type AnimatedPressableProps = Omit<PressableProps, 'style' | 'children' | 'onPressIn' | 'onPressOut'> & {
   activePulse?: boolean;
@@ -108,12 +108,7 @@ export const AnimatedPressable = ({
   };
 
   return (
-    <Pressable
-      {...props}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={styles.pressable}
-    >
+    <Pressable {...props} onPressIn={handlePressIn} onPressOut={handlePressOut} style={styles.pressable}>
       {(state) => (
         <Animated.View
           style={[

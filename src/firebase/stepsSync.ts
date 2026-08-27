@@ -1,8 +1,16 @@
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
 
+import { getDailyChallengeStats, getSessionPace } from '../features/challenges/domain/challengeMetrics';
+import { isStepDataSource } from '../features/steps/domain/models';
+
 import { firestore } from './config';
-import { StepDataSource } from '../health/types';
-import { ChallengeSession, StepHistoryEntry } from '../storage/stepStorage';
+
+import type { ChallengeSession, StoredChallengeSession } from '../features/challenges/domain/models';
+import type { StepHistoryEntry } from '../features/steps/domain/models';
+import type { StepDataSource } from '../health/types';
+
+export { getDailyChallengeStats } from '../features/challenges/domain/challengeMetrics';
+export type { StoredChallengeSession } from '../features/challenges/domain/models';
 
 type SyncDailyStepsParams = {
   date: string;
@@ -72,7 +80,12 @@ type SyncChallengeSessionParams = {
 
 const getSessionId = (date: string, startedAt: string): string => `${date}_${startedAt.replace(/[^a-zA-Z0-9-]/g, '-')}`;
 
-export const syncChallengeSession = async ({ date, session, source, userId }: SyncChallengeSessionParams): Promise<FirestoreSyncResult> => {
+export const syncChallengeSession = async ({
+  date,
+  session,
+  source,
+  userId,
+}: SyncChallengeSessionParams): Promise<FirestoreSyncResult> => {
   if (firestore === null) {
     return { message: 'Firestore is not configured.', ok: false };
   }
@@ -83,7 +96,8 @@ export const syncChallengeSession = async ({ date, session, source, userId }: Sy
       doc(firestore, 'users', userId, 'challengeSessions', getSessionId(date, session.startedAt)),
       {
         date,
-        challengeGoal: typeof session.challengeGoal === 'number' ? Math.max(1, Math.floor(session.challengeGoal)) : null,
+        challengeGoal:
+          typeof session.challengeGoal === 'number' ? Math.max(1, Math.floor(session.challengeGoal)) : null,
         durationMs: Math.max(0, Math.floor(session.durationMs)),
         endedAt: session.endedAt,
         paceStepsPerMinute,
@@ -112,7 +126,10 @@ type FirestoreDailySteps = {
   walkingTimeMs?: number;
 };
 
-export const readDailyStepsFromFirestore = async (userId: string, dates: string[]): Promise<Record<string, FirestoreDailySteps>> => {
+export const readDailyStepsFromFirestore = async (
+  userId: string,
+  dates: string[],
+): Promise<Record<string, FirestoreDailySteps>> => {
   if (firestore === null) {
     return {};
   }
@@ -148,7 +165,10 @@ export const readDailyStepsFromFirestore = async (userId: string, dates: string[
   }
 };
 
-export const readChallengeSessionSumsFromFirestore = async (userId: string, dates: string[]): Promise<Record<string, number>> => {
+export const readChallengeSessionSumsFromFirestore = async (
+  userId: string,
+  dates: string[],
+): Promise<Record<string, number>> => {
   if (firestore === null) {
     return {};
   }
@@ -173,11 +193,6 @@ export const readChallengeSessionSumsFromFirestore = async (userId: string, date
     console.warn('Unable to read challenge sessions from Firestore.', { userId, error });
     return {};
   }
-};
-
-export type StoredChallengeSession = ChallengeSession & {
-  date: string;
-  source?: StepDataSource;
 };
 
 export const readChallengeSessionsFromFirestore = async (userId: string): Promise<StoredChallengeSession[]> => {
@@ -227,45 +242,32 @@ type SyncLocalStepDataParams = {
   userId: string;
 };
 
-export const syncLocalStepDataToFirestore = async ({ entries, goal, localSessionsByDate, userId }: SyncLocalStepDataParams): Promise<void> => {
+export const syncLocalStepDataToFirestore = async ({
+  entries,
+  goal,
+  localSessionsByDate,
+  userId,
+}: SyncLocalStepDataParams): Promise<void> => {
   await Promise.all([
-    ...entries.map((entry) => syncDailySteps({
-      ...getDailyChallengeStats(localSessionsByDate[entry.date] ?? []),
-      date: entry.date,
-      goal,
-      source: 'live-sensor',
-      steps: entry.steps,
-      userId,
-    })),
-    ...Object.entries(localSessionsByDate).flatMap(([date, sessions]) =>
-      sessions.map((session) => syncChallengeSession({
-        date,
-        session,
+    ...entries.map((entry) =>
+      syncDailySteps({
+        ...getDailyChallengeStats(localSessionsByDate[entry.date] ?? []),
+        date: entry.date,
+        goal,
         source: 'live-sensor',
+        steps: entry.steps,
         userId,
-      })),
+      }),
+    ),
+    ...Object.entries(localSessionsByDate).flatMap(([date, sessions]) =>
+      sessions.map((session) =>
+        syncChallengeSession({
+          date,
+          session,
+          source: 'live-sensor',
+          userId,
+        }),
+      ),
     ),
   ]);
-};
-
-const isStepDataSource = (value: unknown): value is StepDataSource =>
-  value === 'apple-health' || value === 'health-connect' || value === 'live-sensor' || value === 'unavailable';
-
-export const getDailyChallengeStats = (sessions: ChallengeSession[]) => {
-  const walkingTimeMs = sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.durationMs)), 0);
-  const challengeSteps = sessions.reduce((total, session) => total + Math.max(0, Math.floor(session.steps)), 0);
-  const sortedSessions = [...sessions].sort((left, right) => new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime());
-
-  return {
-    challengeSessionCount: sessions.length,
-    firstChallengeAt: sortedSessions[0]?.startedAt ?? null,
-    lastChallengeAt: sortedSessions[sortedSessions.length - 1]?.endedAt ?? null,
-    paceStepsPerMinute: walkingTimeMs > 0 ? Math.round(challengeSteps / (walkingTimeMs / 60000)) : 0,
-    walkingTimeMs,
-  };
-};
-
-const getSessionPace = (session: ChallengeSession): number => {
-  const minutes = Math.max(1, session.durationMs / 60000);
-  return Math.round(session.steps / minutes);
 };

@@ -1,11 +1,12 @@
-import { StyleProp, ViewStyle } from 'react-native';
+import { SegmentedTabs } from '../SegmentedTabs';
 
-import { StepTrackingMode } from '../../health/types';
-import { SegmentedTabOption, SegmentedTabs } from '../SegmentedTabs';
+import type { StepTrackingMode } from '../../health/types';
+import type { SegmentedTabOption } from '../SegmentedTabs';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 export type ChallengeTrackingMode = Extract<StepTrackingMode, 'live' | 'system'>;
 
-const challengeSourceOptions: Array<SegmentedTabOption<ChallengeTrackingMode>> = [
+const challengeSourceOptions: SegmentedTabOption<ChallengeTrackingMode>[] = [
   {
     description: 'Real-time',
     icon: 'walk-outline',
@@ -27,17 +28,6 @@ type ChallengeSourceTabsProps = {
   value: ChallengeTrackingMode;
 };
 
-export const ChallengeSourceTabs = ({
-  disabled = false,
-  onChange,
-  style,
-  value,
-}: ChallengeSourceTabsProps) => (
-  <SegmentedTabs
-    disabled={disabled}
-    onChange={onChange}
-    options={challengeSourceOptions}
-    style={style}
-    value={value}
-  />
+export const ChallengeSourceTabs = ({ disabled = false, onChange, style, value }: ChallengeSourceTabsProps) => (
+  <SegmentedTabs disabled={disabled} onChange={onChange} options={challengeSourceOptions} style={style} value={value} />
 );

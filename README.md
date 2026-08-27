@@ -1,7 +1,7 @@
 # StepCounter
 
 ```text
- /\_/\          /\_____/\ 
+ /\_/\          /\_____/\
 ( o.o )        /  o   o  \
  > ^ <        ( ==  ^  == )
                )         (
@@ -47,6 +47,17 @@ npm run ios
 ```
 
 Expo Go is useful for UI checks, but Health Connect / HealthKit need the native app or a dev client.
+
+## Development Checks
+
+Run the complete quality gate before merging:
+
+```bash
+npm run check
+npm run format:check
+```
+
+The project uses strict TypeScript, ESLint with zero warnings, Prettier, and Vitest characterization tests. See [ARCHITECTURE.md](./ARCHITECTURE.md) for module boundaries, data ownership, synchronization policy, and local-storage migration behavior.
 
 ## Firebase
 

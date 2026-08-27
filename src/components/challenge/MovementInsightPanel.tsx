@@ -1,11 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, TextStyle, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { COLORS } from '../../constants';
-import { StepDataSource } from '../../health/types';
-import { formatDuration, RollingAverages } from '../../utils/challengeMetrics';
+import { formatDuration } from '../../utils/challengeMetrics';
 import { getStepSourceLabel } from '../../utils/stepSource';
+
+import type { StepDataSource } from '../../health/types';
+import type { RollingAverages } from '../../utils/challengeMetrics';
+import type { TextStyle } from 'react-native';
 
 type MovementInsightPanelProps = {
   currentChallengeDelta: number;
@@ -32,7 +35,8 @@ export const MovementInsightPanel = ({
   sessionPace,
   source,
 }: MovementInsightPanelProps) => {
-  const challengeGoalPercent = currentChallengeGoal > 0 ? Math.min(100, (currentChallengeDelta / currentChallengeGoal) * 100) : 0;
+  const challengeGoalPercent =
+    currentChallengeGoal > 0 ? Math.min(100, (currentChallengeDelta / currentChallengeGoal) * 100) : 0;
 
   return (
     <View style={styles.sensorSection}>

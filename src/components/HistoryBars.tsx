@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { BAR_MAX_HEIGHT, BAR_MIN_HEIGHT, COLORS } from '../constants';
-import { StepHistoryEntry } from '../storage/stepStorage';
+
+import type { StepHistoryEntry } from '../features/steps/domain/models';
 
 type HistoryBarsProps = {
   history: StepHistoryEntry[];

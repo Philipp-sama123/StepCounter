@@ -1,4 +1,4 @@
-import { ImageSourcePropType } from 'react-native';
+import type { ImageSourcePropType } from 'react-native';
 
 export type AvatarAnimationKey = 'idle' | 'walk' | 'run';
 export type AvatarVariantKey = 'cat01' | 'cat02' | 'cat03' | 'cat04' | 'cat05' | 'chicken' | 'crow';
@@ -165,4 +165,5 @@ export const AVATAR_VARIANTS: AvatarVariantConfig[] = [
 
 export const DEFAULT_AVATAR_VARIANT_KEY: AvatarVariantKey = 'cat05';
 export const AVATAR_SPRITESHEET: AvatarSpritesheetConfig =
-  AVATAR_VARIANTS.find((variant) => variant.key === DEFAULT_AVATAR_VARIANT_KEY)?.spritesheet ?? AVATAR_VARIANTS[0].spritesheet;
+  AVATAR_VARIANTS.find((variant) => variant.key === DEFAULT_AVATAR_VARIANT_KEY)?.spritesheet ??
+  AVATAR_VARIANTS[0].spritesheet;

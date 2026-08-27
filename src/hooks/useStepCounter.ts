@@ -1,8 +1,9 @@
+import { Pedometer } from 'expo-sensors';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import { Pedometer } from 'expo-sensors';
 
 import { STATUS_STOPPED_DELAY_MS } from '../constants';
+import { readTodayStepsFromSystemHealth } from '../health/stepsProvider';
 import {
   getTodayString,
   readStepCounterState,
@@ -10,9 +11,9 @@ import {
   saveStepCounterState,
   saveStepsForDate,
 } from '../storage/stepStorage';
-import { readTodayStepsFromSystemHealth } from '../health/stepsProvider';
-import { StepDataSource, StepTrackingMode } from '../health/types';
 import { getStepSourceSentenceLabel } from '../utils/stepSource';
+
+import type { StepDataSource, StepTrackingMode } from '../health/types';
 
 export type WalkingStatus = 'walking' | 'stopped' | 'unknown';
 
@@ -275,7 +276,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
         if (!hasSystemHealthSteps) {
           const initialSteps = await readTodayStepsFromRange();
           if (isMounted && initialSteps !== null) {
-            setSource(mode === 'live' ? 'live-sensor' : (Platform.OS === 'ios' ? 'apple-health' : 'live-sensor'));
+            setSource(mode === 'live' ? 'live-sensor' : Platform.OS === 'ios' ? 'apple-health' : 'live-sensor');
             updateTodaySteps(initialSteps);
             await saveStepsForDate(today, initialSteps);
             setDebugMessage(`Loaded ${initialSteps.toLocaleString()} steps from device sensors.`);

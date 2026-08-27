@@ -1,8 +1,11 @@
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
 
+import { getBmi } from '../storage/profileStorage';
+
 import { firestore } from './config';
-import { FirestoreSyncResult } from './stepsSync';
-import { getBmi, UserBodyProfile, WeightEntry } from '../storage/profileStorage';
+
+import type { FirestoreSyncResult } from './stepsSync';
+import type { UserBodyProfile, WeightEntry } from '../features/profile/domain/models';
 
 export const syncBodyProfile = async (userId: string, profile: UserBodyProfile): Promise<FirestoreSyncResult> => {
   if (firestore === null) {
@@ -93,7 +96,8 @@ export const readWeightEntriesFromFirestore = async (userId: string): Promise<We
       .map((weightDoc): WeightEntry | null => {
         const data = weightDoc.data();
         const date = typeof data.date === 'string' ? data.date : weightDoc.id;
-        const timestamp = typeof data.timestamp === 'string' ? data.timestamp : new Date(`${date}T12:00:00`).toISOString();
+        const timestamp =
+          typeof data.timestamp === 'string' ? data.timestamp : new Date(`${date}T12:00:00`).toISOString();
         const weightKg = typeof data.weightKg === 'number' ? data.weightKg : 0;
 
         if (weightKg <= 0) {

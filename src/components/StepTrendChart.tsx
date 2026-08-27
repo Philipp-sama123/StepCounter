@@ -3,8 +3,9 @@ import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-n
 import Svg, { Circle, Defs, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 
 import { COLORS } from '../constants';
-import { StepHistoryEntry } from '../storage/stepStorage';
 import { triggerSelectionHaptic } from '../utils/haptics';
+
+import type { StepHistoryEntry } from '../features/steps/domain/models';
 
 type StepTrendChartProps = {
   animationKey?: number;
@@ -118,7 +119,11 @@ export const StepTrendChart = ({
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Daily step trend</Text>
-          <Text style={styles.subtitle}>{metric === 'steps' ? 'Green bars show logged challenge sessions' : 'Steps per minute from walking sessions'}</Text>
+          <Text style={styles.subtitle}>
+            {metric === 'steps'
+              ? 'Green bars show logged challenge sessions'
+              : 'Steps per minute from walking sessions'}
+          </Text>
         </View>
         <Text style={styles.goal}>{metric === 'steps' ? `${formatCompactSteps(goal)} goal` : 'pace'}</Text>
       </View>
@@ -163,7 +168,10 @@ export const StepTrendChart = ({
                     {points.map((point, index) => {
                       const entry = history[index];
                       const sessionSteps = sessionSums[entry.date] ?? 0;
-                      const height = Math.max(sessionSteps > 0 ? 4 : 0, plotHeight * Math.min(sessionSteps / chartRange, 1));
+                      const height = Math.max(
+                        sessionSteps > 0 ? 4 : 0,
+                        plotHeight * Math.min(sessionSteps / chartRange, 1),
+                      );
 
                       if (sessionSteps <= 0) {
                         return null;
@@ -183,8 +191,23 @@ export const StepTrendChart = ({
                       );
                     })}
                     <Path d={areaPath} fill="url(#stepArea)" />
-                    <Path d={linePath} fill="none" opacity={0.16} stroke={COLORS.action} strokeLinecap="round" strokeLinejoin="round" strokeWidth={12} />
-                    <Path d={linePath} fill="none" stroke={COLORS.action} strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} />
+                    <Path
+                      d={linePath}
+                      fill="none"
+                      opacity={0.16}
+                      stroke={COLORS.action}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={12}
+                    />
+                    <Path
+                      d={linePath}
+                      fill="none"
+                      stroke={COLORS.action}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={4}
+                    />
                     {points.map((point, index) => {
                       const entry = history[index];
                       const reachedGoal = metric === 'steps' && entry.steps >= goal;
@@ -246,8 +269,11 @@ export const StepTrendChart = ({
   );
 };
 
-const getEntryValue = (entry: StepHistoryEntry, metric: 'pace' | 'steps', paceByDate: Record<string, number>): number =>
-  metric === 'steps' ? entry.steps : (paceByDate[entry.date] ?? 0);
+const getEntryValue = (
+  entry: StepHistoryEntry,
+  metric: 'pace' | 'steps',
+  paceByDate: Record<string, number>,
+): number => (metric === 'steps' ? entry.steps : (paceByDate[entry.date] ?? 0));
 
 const styles = StyleSheet.create({
   wrapper: {

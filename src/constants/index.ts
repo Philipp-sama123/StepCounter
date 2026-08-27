@@ -21,8 +21,6 @@ export const MIN_GOAL = 1;
 export const MAX_GOAL = 100000;
 export const BAR_MAX_HEIGHT = 180;
 export const BAR_MIN_HEIGHT = 8;
-export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-
 export const COLORS = {
   background: '#111315',
   backgroundGradientEnd: '#4A525A',

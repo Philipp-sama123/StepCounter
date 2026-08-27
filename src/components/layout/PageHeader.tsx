@@ -1,7 +1,9 @@
-import { ReactNode } from 'react';
-import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { COLORS } from '../../constants';
+
+import type { ReactNode } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 type PageHeaderProps = {
   accessory?: ReactNode;

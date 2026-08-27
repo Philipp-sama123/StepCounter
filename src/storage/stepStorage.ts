@@ -1,38 +1,36 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import {
   CHALLENGE_SESSION_KEY_PREFIX,
   DEFAULT_GOAL,
   LAST_SEVEN_DAYS,
-  ONE_DAY_MS,
   STEP_HISTORY_KEY_PREFIX,
   STORAGE_KEYS,
   WANK_SESSION_KEY_PREFIX,
 } from '../constants';
-import { StepDataSource } from '../health/types';
+import { isChallengeSession, isWankSession } from '../features/challenges/domain/models';
+import { userScopedStorage as AsyncStorage } from '../platform/storage/userScopedStorage';
+import { getRecentDateStrings, parseLocalDate } from '../shared/date/localDate';
+import { parseJsonArray } from '../shared/validation/json';
+
+import type { ChallengeSession, WankSession } from '../features/challenges/domain/models';
+import type { StepHistoryEntry } from '../features/steps/domain/models';
+
+export type {
+  ChallengeSession,
+  WankReplayEvent,
+  WankReplaySample,
+  WankSession,
+} from '../features/challenges/domain/models';
+export type { StepHistoryEntry } from '../features/steps/domain/models';
 
 const MAX_WANK_SESSIONS_PER_DAY = 20;
 const MAX_WANK_SESSIONS_TOTAL = 120;
-
-export type StepHistoryEntry = {
-  date: string;
-  dayName: string;
-  steps: number;
-};
 
 export type StepCounterState = {
   baseline: number;
   lastDate: string | null;
 };
 
-const toLocalDateString = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-export const getTodayString = (): string => toLocalDateString(new Date());
+export { getTodayString } from '../shared/date/localDate';
 
 const parseStoredNumber = (value: string | null, fallback: number): number => {
   if (value === null) {
@@ -149,19 +147,14 @@ export const saveDailyChallengeGoal = async (goal: number): Promise<void> => {
 };
 
 export const readRecentDays = async (dayCount: number): Promise<StepHistoryEntry[]> => {
-  const safeDayCount = Math.max(1, Math.floor(dayCount));
-  const today = new Date(getTodayString());
-  const dates = Array.from({ length: safeDayCount }, (_, index) => {
-    const date = new Date(today.getTime() - (safeDayCount - 1 - index) * ONE_DAY_MS);
-    return toLocalDateString(date);
-  });
+  const dates = getRecentDateStrings(dayCount);
 
   try {
     const values = await AsyncStorage.multiGet(dates.map(getHistoryKey));
 
     return dates.map((date, index) => {
       const steps = parseStoredNumber(values[index]?.[1] ?? null, 0);
-      const dayName = new Date(date).toLocaleDateString(undefined, { weekday: 'short' });
+      const dayName = parseLocalDate(date).toLocaleDateString(undefined, { weekday: 'short' });
 
       return {
         date,
@@ -173,7 +166,7 @@ export const readRecentDays = async (dayCount: number): Promise<StepHistoryEntry
     console.warn('Unable to read step history.', error);
     return dates.map((date) => ({
       date,
-      dayName: new Date(date).toLocaleDateString(undefined, { weekday: 'short' }),
+      dayName: parseLocalDate(date).toLocaleDateString(undefined, { weekday: 'short' }),
       steps: 0,
     }));
   }
@@ -181,22 +174,13 @@ export const readRecentDays = async (dayCount: number): Promise<StepHistoryEntry
 
 export const readLastSevenDays = async (): Promise<StepHistoryEntry[]> => readRecentDays(LAST_SEVEN_DAYS);
 
-export type ChallengeSession = {
-  startedAt: string;
-  endedAt: string;
-  challengeGoal?: number;
-  steps: number;
-  durationMs: number;
-  source?: StepDataSource;
-};
-
 export const getChallengeKey = (date: string): string => `${CHALLENGE_SESSION_KEY_PREFIX}${date}`;
 
 export const saveChallengeSession = async (date: string, session: ChallengeSession): Promise<void> => {
   try {
     const key = getChallengeKey(date);
     const existing = await AsyncStorage.getItem(key);
-    const arr: ChallengeSession[] = existing ? JSON.parse(existing) : [];
+    const arr = parseJsonArray(existing, isChallengeSession);
     arr.push(session);
     await AsyncStorage.setItem(key, JSON.stringify(arr));
   } catch (error) {
@@ -208,7 +192,7 @@ export const mergeChallengeSessionsForDate = async (date: string, sessions: Chal
   try {
     const key = getChallengeKey(date);
     const existing = await AsyncStorage.getItem(key);
-    const storedSessions: ChallengeSession[] = existing ? JSON.parse(existing) : [];
+    const storedSessions = parseJsonArray(existing, isChallengeSession);
     const sessionMap = new Map<string, ChallengeSession>();
 
     [...storedSessions, ...sessions].forEach((session) => {
@@ -217,7 +201,11 @@ export const mergeChallengeSessionsForDate = async (date: string, sessions: Chal
 
     await AsyncStorage.setItem(
       key,
-      JSON.stringify([...sessionMap.values()].sort((left, right) => new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime())),
+      JSON.stringify(
+        [...sessionMap.values()].sort(
+          (left, right) => new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime(),
+        ),
+      ),
     );
   } catch (error) {
     console.warn(`Unable to merge challenge sessions for ${date}.`, error);
@@ -228,36 +216,35 @@ export const readChallengeSessions = async (date: string): Promise<ChallengeSess
   try {
     const key = getChallengeKey(date);
     const raw = await AsyncStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as ChallengeSession[]) : [];
+    return parseJsonArray(raw, isChallengeSession);
   } catch (error) {
     console.warn(`Unable to read challenge sessions for ${date}.`, error);
     return [];
   }
 };
 
-export const readRecentChallengeSessions = async (): Promise<Array<ChallengeSession & { date: string }>> => {
+export const readRecentChallengeSessions = async (): Promise<(ChallengeSession & { date: string })[]> => {
   return readChallengeSessionsForRecentDays(LAST_SEVEN_DAYS);
 };
 
-export const readChallengeSessionsForRecentDays = async (dayCount: number): Promise<Array<ChallengeSession & { date: string }>> => {
-  const safeDayCount = Math.max(1, Math.floor(dayCount));
-  const today = new Date(getTodayString());
-  const dates = Array.from({ length: safeDayCount }, (_, index) => {
-    const date = new Date(today.getTime() - (safeDayCount - 1 - index) * ONE_DAY_MS);
-    return toLocalDateString(date);
-  });
+export const readChallengeSessionsForRecentDays = async (
+  dayCount: number,
+): Promise<(ChallengeSession & { date: string })[]> => {
+  const dates = getRecentDateStrings(dayCount);
 
-  const sessionsByDate = await Promise.all(dates.map(async (date) => ({
-    date,
-    sessions: await readChallengeSessions(date),
-  })));
+  const sessionsByDate = await Promise.all(
+    dates.map(async (date) => ({
+      date,
+      sessions: await readChallengeSessions(date),
+    })),
+  );
 
   return sessionsByDate
     .flatMap(({ date, sessions }) => sessions.map((session) => ({ ...session, date })))
     .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
 };
 
-export const readAllChallengeSessions = async (): Promise<Array<ChallengeSession & { date: string }>> => {
+export const readAllChallengeSessions = async (): Promise<(ChallengeSession & { date: string })[]> => {
   try {
     const keys = await AsyncStorage.getAllKeys();
     const challengeKeys = keys
@@ -273,7 +260,7 @@ export const readAllChallengeSessions = async (): Promise<Array<ChallengeSession
         }
 
         const date = key.replace(CHALLENGE_SESSION_KEY_PREFIX, '');
-        const sessions = JSON.parse(raw) as ChallengeSession[];
+        const sessions = parseJsonArray(raw, isChallengeSession);
         return sessions.map((session) => ({ ...session, date }));
       })
       .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
@@ -283,44 +270,18 @@ export const readAllChallengeSessions = async (): Promise<Array<ChallengeSession
   }
 };
 
-export type WankSession = {
-  averageMotionG: number;
-  averageRotationRadPerSecond: number;
-  bestCombo: number;
-  durationMs: number;
-  endedAt: string;
-  replayEvents?: WankReplayEvent[];
-  replaySamples?: WankReplaySample[];
-  startedAt: string;
-  swings: number;
-};
-
-export type WankReplayEvent = {
-  combo: number;
-  direction: 'down' | 'still' | 'up';
-  motionG: number;
-  offsetMs: number;
-  rotationRadPerSecond: number;
-  swingNumber: number;
-};
-
-export type WankReplaySample = {
-  direction: 'down' | 'still' | 'up';
-  motionG: number;
-  offsetMs: number;
-  passed: boolean;
-  rotationRadPerSecond: number;
-};
-
 export const getWankSessionKey = (date: string): string => `${WANK_SESSION_KEY_PREFIX}${date}`;
 
 export const saveWankSession = async (date: string, session: WankSession): Promise<void> => {
   try {
     const key = getWankSessionKey(date);
     const existing = await AsyncStorage.getItem(key);
-    const sessions: WankSession[] = existing ? JSON.parse(existing) : [];
+    const sessions = parseJsonArray(existing, isWankSession);
     sessions.push(session);
-    await AsyncStorage.setItem(key, JSON.stringify(sortWankSessionsNewestFirst(sessions).slice(0, MAX_WANK_SESSIONS_PER_DAY)));
+    await AsyncStorage.setItem(
+      key,
+      JSON.stringify(sortWankSessionsNewestFirst(sessions).slice(0, MAX_WANK_SESSIONS_PER_DAY)),
+    );
     await pruneWankSessionStorage();
   } catch (error) {
     console.warn(`Unable to save wank session for ${date}.`, error);
@@ -330,7 +291,7 @@ export const saveWankSession = async (date: string, session: WankSession): Promi
 export const readWankSessions = async (date: string): Promise<WankSession[]> => {
   try {
     const raw = await AsyncStorage.getItem(getWankSessionKey(date));
-    return raw ? (JSON.parse(raw) as WankSession[]) : [];
+    return parseJsonArray(raw, isWankSession);
   } catch (error) {
     console.warn(`Unable to read wank sessions for ${date}.`, error);
     return [];
@@ -347,7 +308,7 @@ const pruneWankSessionStorage = async (): Promise<void> => {
     }
 
     const date = key.replace(WANK_SESSION_KEY_PREFIX, '');
-    const sessions = JSON.parse(raw) as WankSession[];
+    const sessions = parseJsonArray(raw, isWankSession);
     return sessions.map((session) => ({ ...session, date }));
   });
   const sessionsToKeep = sortWankSessionsNewestFirst(allSessions).slice(0, MAX_WANK_SESSIONS_TOTAL);
@@ -358,10 +319,13 @@ const pruneWankSessionStorage = async (): Promise<void> => {
   }, {});
   const nextDates = new Set(Object.keys(sessionsByDate));
   const keysToRemove = wankKeys.filter((key) => !nextDates.has(key.replace(WANK_SESSION_KEY_PREFIX, '')));
-  const entriesToWrite = Object.entries(sessionsByDate).map(([sessionDate, sessions]) => [
-    getWankSessionKey(sessionDate),
-    JSON.stringify(sortWankSessionsNewestFirst(sessions).slice(0, MAX_WANK_SESSIONS_PER_DAY)),
-  ] as [string, string]);
+  const entriesToWrite = Object.entries(sessionsByDate).map(
+    ([sessionDate, sessions]) =>
+      [
+        getWankSessionKey(sessionDate),
+        JSON.stringify(sortWankSessionsNewestFirst(sessions).slice(0, MAX_WANK_SESSIONS_PER_DAY)),
+      ] as [string, string],
+  );
 
   await Promise.all([
     keysToRemove.length === 0 ? Promise.resolve() : AsyncStorage.multiRemove(keysToRemove),
@@ -372,25 +336,22 @@ const pruneWankSessionStorage = async (): Promise<void> => {
 const sortWankSessionsNewestFirst = <T extends Pick<WankSession, 'startedAt'>>(sessions: T[]): T[] =>
   [...sessions].sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
 
-export const readWankSessionsForRecentDays = async (dayCount: number): Promise<Array<WankSession & { date: string }>> => {
-  const safeDayCount = Math.max(1, Math.floor(dayCount));
-  const today = new Date(getTodayString());
-  const dates = Array.from({ length: safeDayCount }, (_, index) => {
-    const date = new Date(today.getTime() - (safeDayCount - 1 - index) * ONE_DAY_MS);
-    return toLocalDateString(date);
-  });
+export const readWankSessionsForRecentDays = async (dayCount: number): Promise<(WankSession & { date: string })[]> => {
+  const dates = getRecentDateStrings(dayCount);
 
-  const sessionsByDate = await Promise.all(dates.map(async (date) => ({
-    date,
-    sessions: await readWankSessions(date),
-  })));
+  const sessionsByDate = await Promise.all(
+    dates.map(async (date) => ({
+      date,
+      sessions: await readWankSessions(date),
+    })),
+  );
 
   return sessionsByDate
     .flatMap(({ date, sessions }) => sessions.map((session) => ({ ...session, date })))
     .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
 };
 
-export const readAllWankSessions = async (): Promise<Array<WankSession & { date: string }>> => {
+export const readAllWankSessions = async (): Promise<(WankSession & { date: string })[]> => {
   try {
     const keys = await AsyncStorage.getAllKeys();
     const wankKeys = keys
@@ -406,7 +367,7 @@ export const readAllWankSessions = async (): Promise<Array<WankSession & { date:
         }
 
         const date = key.replace(WANK_SESSION_KEY_PREFIX, '');
-        const sessions = JSON.parse(raw) as WankSession[];
+        const sessions = parseJsonArray(raw, isWankSession);
         return sessions.map((session) => ({ ...session, date }));
       })
       .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());

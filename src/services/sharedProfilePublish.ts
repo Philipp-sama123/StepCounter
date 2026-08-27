@@ -1,5 +1,5 @@
-import { publishSharedProfile } from '../firebase/shareSync';
 import { firebaseAuth } from '../firebase/config';
+import { publishSharedProfile } from '../firebase/shareSync';
 import { readOwnShareCode } from '../storage/shareStorage';
 
 export const publishOwnSharedProfileSnapshot = async ({

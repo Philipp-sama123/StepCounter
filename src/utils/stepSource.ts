@@ -1,4 +1,4 @@
-import { StepDataSource } from '../health/types';
+import type { StepDataSource } from '../health/types';
 
 export const getStepSourceLabel = (source: StepDataSource): string => {
   if (source === 'apple-health') {

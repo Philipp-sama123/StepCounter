@@ -1,14 +1,14 @@
-import {
-  getDailyChallengeStats,
-  readDailyStepsFromFirestore,
-  syncDailySteps,
-} from '../firebase/stepsSync';
-import { ONE_DAY_MS } from '../constants';
+import { getDailyChallengeStats } from '../features/challenges/domain/challengeMetrics';
+import { reconcileStepTotal } from '../features/steps/domain/stepReconciliation';
+import { readDailyStepsFromFirestore, syncDailySteps } from '../firebase/stepsSync';
 import { readStepsForDatesFromSystemHealth } from '../health/stepsProvider';
-import { StepDataSource } from '../health/types';
+import { getRecentDateStrings } from '../shared/date/localDate';
 import { getTodayString, readChallengeSessions, saveStepsForDate } from '../storage/stepStorage';
-import { appendSyncDiagnostic } from './syncDiagnostics';
+
 import { publishOwnSharedProfileSnapshot } from './sharedProfilePublish';
+import { appendSyncDiagnostic } from './syncDiagnostics';
+
+import type { StepDataSource } from '../health/types';
 
 export type DailySyncSnapshot = {
   goal: number;
@@ -80,12 +80,16 @@ export const syncDailyStepSnapshot = async (
   }
 
   const bestTodaySteps = getBestStepTotal(existing, snapshot.steps);
-  if (options.skipUnchanged !== false && existing !== undefined && hasNoDailyStepChanges(existing, {
-    ...challengeStats,
-    goal: snapshot.goal,
-    source: snapshot.source,
-    steps: bestTodaySteps,
-  })) {
+  if (
+    options.skipUnchanged !== false &&
+    existing !== undefined &&
+    hasNoDailyStepChanges(existing, {
+      ...challengeStats,
+      goal: snapshot.goal,
+      source: snapshot.source,
+      steps: bestTodaySteps,
+    })
+  ) {
     if (backfillResult.changed > 0) {
       await publishOwnSharedProfileSnapshot({
         userId: snapshot.userId,
@@ -121,7 +125,7 @@ export const syncDailyStepSnapshot = async (
   await appendSyncDiagnostic({
     date: today,
     existingSteps: existing?.steps ?? null,
-    finalSteps: result.ok ? bestTodaySteps : existing?.steps ?? null,
+    finalSteps: result.ok ? bestTodaySteps : (existing?.steps ?? null),
     reason: result.ok ? 'today-saved' : result.message,
     source: snapshot.source,
     status: result.ok ? 'changed' : 'failed',
@@ -201,10 +205,13 @@ const backfillRecentDailySteps = async ({
       };
 
       const steps = getBestStepTotal(existing, systemResult.steps);
-      if (existing !== undefined && hasNoDailyStepChanges(existing, {
-        ...nextComparable,
-        steps,
-      })) {
+      if (
+        existing !== undefined &&
+        hasNoDailyStepChanges(existing, {
+          ...nextComparable,
+          steps,
+        })
+      ) {
         await appendSyncDiagnostic({
           date,
           existingSteps: existing.steps,
@@ -235,7 +242,7 @@ const backfillRecentDailySteps = async ({
       await appendSyncDiagnostic({
         date,
         existingSteps: existing?.steps ?? null,
-        finalSteps: result.ok ? steps : existing?.steps ?? null,
+        finalSteps: result.ok ? steps : (existing?.steps ?? null),
         reason: result.ok ? 'backfill-saved' : result.message,
         source: systemResult.source,
         status: result.ok ? 'changed' : 'failed',
@@ -263,25 +270,15 @@ const backfillRecentDailySteps = async ({
   };
 };
 
-const getRecentDateStrings = (days: number): string[] => {
-  const safeDays = Math.max(1, Math.floor(days));
-  const today = new Date(getTodayString());
-
-  return Array.from({ length: safeDays }, (_, index) => {
-    const date = new Date(today.getTime() - (safeDays - 1 - index) * ONE_DAY_MS);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  });
-};
-
 const getBestStepTotal = (existing: ExistingDailySteps | undefined, nextSteps: number): number =>
-  Math.max(existing?.steps ?? 0, Math.max(0, Math.floor(nextSteps)));
+  reconcileStepTotal({ existingSteps: existing?.steps, incomingSteps: nextSteps });
 
 const hasNoDailyStepChanges = (existing: ExistingDailySteps, next: ComparableDailySteps): boolean =>
-  existing.steps === Math.max(0, Math.floor(next.steps))
-  && (existing.goal ?? 0) === next.goal
-  && existing.source === next.source
-  && (existing.challengeSessionCount ?? 0) === next.challengeSessionCount
-  && (existing.firstChallengeAt ?? null) === next.firstChallengeAt
-  && (existing.lastChallengeAt ?? null) === next.lastChallengeAt
-  && (existing.paceStepsPerMinute ?? 0) === Math.max(0, Math.floor(next.paceStepsPerMinute))
-  && (existing.walkingTimeMs ?? 0) === Math.max(0, Math.floor(next.walkingTimeMs));
+  existing.steps === Math.max(0, Math.floor(next.steps)) &&
+  (existing.goal ?? 0) === next.goal &&
+  existing.source === next.source &&
+  (existing.challengeSessionCount ?? 0) === next.challengeSessionCount &&
+  (existing.firstChallengeAt ?? null) === next.firstChallengeAt &&
+  (existing.lastChallengeAt ?? null) === next.lastChallengeAt &&
+  (existing.paceStepsPerMinute ?? 0) === Math.max(0, Math.floor(next.paceStepsPerMinute)) &&
+  (existing.walkingTimeMs ?? 0) === Math.max(0, Math.floor(next.walkingTimeMs));

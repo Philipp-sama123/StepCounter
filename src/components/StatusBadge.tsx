@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
 
 import { COLORS } from '../constants';
-import { WalkingStatus } from '../hooks/useStepCounter';
+
+import type { WalkingStatus } from '../hooks/useStepCounter';
 
 type StatusBadgeProps = {
   attention?: boolean;
@@ -47,12 +48,40 @@ export const StatusBadge = ({ attention = false, status }: StatusBadgeProps) => 
     <Animated.View
       style={[
         styles.badge,
-        attention ? styles.challengeBadge : isWalking ? styles.walkingBadge : isUnknown ? styles.unknownBadge : styles.stoppedBadge,
+        attention
+          ? styles.challengeBadge
+          : isWalking
+            ? styles.walkingBadge
+            : isUnknown
+              ? styles.unknownBadge
+              : styles.stoppedBadge,
         { opacity },
       ]}
     >
-      <Animated.View style={[styles.dot, attention ? styles.challengeDot : isWalking ? styles.walkingDot : isUnknown ? styles.unknownDot : styles.stoppedDot]} />
-      <Text style={[styles.text, attention ? styles.challengeText : isWalking ? styles.walkingText : isUnknown ? styles.unknownText : styles.stoppedText]}>
+      <Animated.View
+        style={[
+          styles.dot,
+          attention
+            ? styles.challengeDot
+            : isWalking
+              ? styles.walkingDot
+              : isUnknown
+                ? styles.unknownDot
+                : styles.stoppedDot,
+        ]}
+      />
+      <Text
+        style={[
+          styles.text,
+          attention
+            ? styles.challengeText
+            : isWalking
+              ? styles.walkingText
+              : isUnknown
+                ? styles.unknownText
+                : styles.stoppedText,
+        ]}
+      >
         {attention ? 'Challenge running' : isWalking ? 'Walking' : isUnknown ? 'No information' : 'Stopped'}
       </Text>
     </Animated.View>

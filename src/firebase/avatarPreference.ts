@@ -1,7 +1,10 @@
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
-import { AVATAR_VARIANTS, AvatarVariantKey } from '../config/avatarSprites';
+import { AVATAR_VARIANTS } from '../config/avatarSprites';
+
 import { firestore } from './config';
+
+import type { AvatarVariantKey } from '../config/avatarSprites';
 
 export const readAvatarPreferenceFromFirestore = async (userId: string): Promise<AvatarVariantKey | null> => {
   if (firestore === null) {
@@ -19,7 +22,10 @@ export const readAvatarPreferenceFromFirestore = async (userId: string): Promise
   }
 };
 
-export const saveAvatarPreferenceToFirestore = async (userId: string, avatarVariant: AvatarVariantKey): Promise<void> => {
+export const saveAvatarPreferenceToFirestore = async (
+  userId: string,
+  avatarVariant: AvatarVariantKey,
+): Promise<void> => {
   if (firestore === null) {
     return;
   }

@@ -1,6 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isStepDataSource } from '../features/steps/domain/models';
+import { userScopedStorage as AsyncStorage } from '../platform/storage/userScopedStorage';
 
-import { StepDataSource } from '../health/types';
+import type { StepDataSource } from '../health/types';
 
 const SYNC_DIAGNOSTICS_KEY = 'sync:diagnostics';
 const MAX_SYNC_DIAGNOSTIC_ENTRIES = 80;
@@ -19,9 +20,7 @@ export type SyncDiagnosticEntry = {
   timestamp: string;
 };
 
-export const appendSyncDiagnostic = async (
-  entry: Omit<SyncDiagnosticEntry, 'id' | 'timestamp'>,
-): Promise<void> => {
+export const appendSyncDiagnostic = async (entry: Omit<SyncDiagnosticEntry, 'id' | 'timestamp'>): Promise<void> => {
   try {
     const currentEntries = await readSyncDiagnostics();
     const timestamp = new Date().toISOString();
@@ -65,12 +64,12 @@ const parseSyncDiagnosticEntry = (entry: unknown): SyncDiagnosticEntry | null =>
 
   const candidate = entry as Partial<SyncDiagnosticEntry>;
   if (
-    typeof candidate.date !== 'string'
-    || typeof candidate.id !== 'string'
-    || typeof candidate.reason !== 'string'
-    || !isSyncDiagnosticStatus(candidate.status)
-    || !isStepDataSource(candidate.source)
-    || typeof candidate.timestamp !== 'string'
+    typeof candidate.date !== 'string' ||
+    typeof candidate.id !== 'string' ||
+    typeof candidate.reason !== 'string' ||
+    !isSyncDiagnosticStatus(candidate.status) ||
+    !isStepDataSource(candidate.source) ||
+    typeof candidate.timestamp !== 'string'
   ) {
     return null;
   }
@@ -93,6 +92,3 @@ const toNullableNumber = (value: unknown): number | null =>
 
 const isSyncDiagnosticStatus = (value: unknown): value is SyncDiagnosticStatus =>
   value === 'changed' || value === 'failed' || value === 'skipped';
-
-const isStepDataSource = (value: unknown): value is StepDataSource =>
-  value === 'apple-health' || value === 'health-connect' || value === 'live-sensor' || value === 'unavailable';

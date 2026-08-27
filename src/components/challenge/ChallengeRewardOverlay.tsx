@@ -116,21 +116,13 @@ export const ChallengeRewardOverlay = ({ onDone, reward }: ChallengeRewardOverla
   return (
     <Animated.View style={[styles.rewardOverlay, { opacity: overlayOpacity }]}>
       <View style={styles.rewardGlow} />
-      <Pressable
-        accessibilityLabel="Close challenge reward"
-        accessibilityRole="button"
-        onPress={dismissReward}
-      >
+      <Pressable accessibilityLabel="Close challenge reward" accessibilityRole="button" onPress={dismissReward}>
         <Animated.View
           style={[
             styles.rewardCard,
             {
               opacity: cardOpacity,
-              transform: [
-                { translateX: cardTranslateX },
-                { translateY: cardTranslateY },
-                { scale: cardScale },
-              ],
+              transform: [{ translateX: cardTranslateX }, { translateY: cardTranslateY }, { scale: cardScale }],
             },
           ]}
         >

@@ -1,4 +1,3 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -8,12 +7,16 @@ import {
   sendPasswordResetEmail,
   signOut,
   updateProfile,
-  User,
 } from '@firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 import { registerBackgroundStepSync, unregisterBackgroundStepSync } from '../background/stepSyncTask';
 import { firebaseAuth, firestore, isFirebaseConfigured } from '../firebase/config';
+import { activateUserStorage, deactivateUserStorage } from '../platform/storage/userScopedStorage';
+
+import type { User } from '@firebase/auth';
+import type { ReactNode } from 'react';
 
 type AuthContextValue = {
   isConfigured: boolean;
@@ -63,17 +66,31 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       return undefined;
     }
 
-    return onAuthStateChanged(firebaseAuth, (nextUser) => {
-      setUser(nextUser);
-      setIsLoading(false);
+    let authRevision = 0;
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+      const revision = ++authRevision;
+      void (async () => {
+        if (nextUser !== null) {
+          await activateUserStorage(nextUser.uid);
+          await upsertUserProfile(nextUser);
+          void registerBackgroundStepSync();
+        } else {
+          deactivateUserStorage();
+          void unregisterBackgroundStepSync();
+        }
 
-      if (nextUser !== null) {
-        void upsertUserProfile(nextUser);
-        void registerBackgroundStepSync();
-      } else {
-        void unregisterBackgroundStepSync();
-      }
+        if (revision !== authRevision) {
+          return;
+        }
+        setUser(nextUser);
+        setIsLoading(false);
+      })();
     });
+
+    return () => {
+      authRevision += 1;
+      unsubscribe();
+    };
   }, []);
 
   const value = useMemo<AuthContextValue>(

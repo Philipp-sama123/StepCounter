@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { ReactNode } from 'react';
-import { ActivityIndicator, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 
 import { COLORS, THEME } from '../../constants';
 import { AnimatedPressable } from '../AnimatedPressable';
+
+import type { ReactNode } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 type AppButtonVariant = 'danger' | 'primary' | 'secondary' | 'warning';
 
@@ -49,8 +51,14 @@ export const AppButton = ({
     >
       {children ?? (
         <>
-          {busy ? <ActivityIndicator color={foregroundColor} /> : icon ? <Ionicons color={foregroundColor} name={icon} size={18} /> : null}
-          <Text style={[styles.label, isSecondary ? styles.secondaryLabel : null, { color: foregroundColor }]}>{busy ? getBusyLabel(label) : label}</Text>
+          {busy ? (
+            <ActivityIndicator color={foregroundColor} />
+          ) : icon ? (
+            <Ionicons color={foregroundColor} name={icon} size={18} />
+          ) : null}
+          <Text style={[styles.label, isSecondary ? styles.secondaryLabel : null, { color: foregroundColor }]}>
+            {busy ? getBusyLabel(label) : label}
+          </Text>
         </>
       )}
     </AnimatedPressable>

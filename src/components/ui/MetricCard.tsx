@@ -1,7 +1,9 @@
-import { ReactNode } from 'react';
-import { StyleProp, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { COLORS, THEME } from '../../constants';
+
+import type { ReactNode } from 'react';
+import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 
 type MetricCardProps = {
   children?: ReactNode;

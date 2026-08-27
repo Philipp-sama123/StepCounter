@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { COLORS, THEME } from '../constants';
+
 import { AnimatedPressable } from './AnimatedPressable';
+
+import type { StyleProp, ViewStyle } from 'react-native';
 
 export type SegmentedTabOption<T extends string> = {
   description?: string;
@@ -14,7 +17,7 @@ export type SegmentedTabOption<T extends string> = {
 type SegmentedTabsProps<T extends string> = {
   disabled?: boolean;
   onChange: (value: T) => void;
-  options: Array<SegmentedTabOption<T>>;
+  options: SegmentedTabOption<T>[];
   style?: StyleProp<ViewStyle>;
   value: T;
 };
@@ -44,7 +47,11 @@ export const SegmentedTabs = <T extends string>({
           style={[styles.tab, isSelected ? styles.selectedTab : null]}
         >
           {option.icon ? (
-            <Ionicons color={isSelected ? THEME.color.tabSelectedText : THEME.color.tabText} name={option.icon} size={16} />
+            <Ionicons
+              color={isSelected ? THEME.color.tabSelectedText : THEME.color.tabText}
+              name={option.icon}
+              size={16}
+            />
           ) : null}
           <View style={styles.copy}>
             <Text style={[styles.label, isSelected ? styles.selectedLabel : null]}>{option.label}</Text>

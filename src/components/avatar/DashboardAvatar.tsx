@@ -1,19 +1,15 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Image, ImageSourcePropType, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-import {
-  AVATAR_STORAGE_KEY,
-  AVATAR_VARIANTS,
-  AvatarAnimationConfig,
-  AvatarAnimationKey,
-  AvatarVariantKey,
-  DEFAULT_AVATAR_VARIANT_KEY,
-} from '../../config/avatarSprites';
+import { AVATAR_STORAGE_KEY, AVATAR_VARIANTS, DEFAULT_AVATAR_VARIANT_KEY } from '../../config/avatarSprites';
 import { COLORS } from '../../constants';
 import { readAvatarPreferenceFromFirestore } from '../../firebase/avatarPreference';
+import { userScopedStorage as AsyncStorage } from '../../platform/storage/userScopedStorage';
+
+import type { AvatarAnimationConfig, AvatarAnimationKey, AvatarVariantKey } from '../../config/avatarSprites';
+import type { ImageSourcePropType } from 'react-native';
 
 type DashboardAvatarProps = {
   caption?: string;
@@ -93,7 +89,12 @@ export const DashboardAvatar = ({ caption, state, userId }: DashboardAvatarProps
               <Stop offset="1" stopColor={COLORS.avatarGradientEnd} />
             </LinearGradient>
           </Defs>
-          <Circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} fill="url(#dashboardAvatarCircleGradient)" r={(RING_SIZE - RING_STROKE * 3) / 2} />
+          <Circle
+            cx={RING_SIZE / 2}
+            cy={RING_SIZE / 2}
+            fill="url(#dashboardAvatarCircleGradient)"
+            r={(RING_SIZE - RING_STROKE * 3) / 2}
+          />
           <Circle
             cx={RING_SIZE / 2}
             cy={RING_SIZE / 2}
@@ -138,18 +139,27 @@ const SpriteFrame = ({ animation, frameHeight, frameIndex, frameWidth, source }:
       resizeMethod="resize"
       resizeMode="stretch"
       source={source}
-      style={{
-        height: (AVATAR_SIZE / frameHeight) * frameHeight,
-        imageRendering: 'pixelated',
-        transform: [{ translateX: -frameIndex * AVATAR_SIZE }],
-        width: (AVATAR_SIZE / frameWidth) * frameWidth * animation.frameCount,
-      } as object}
+      style={
+        {
+          height: (AVATAR_SIZE / frameHeight) * frameHeight,
+          imageRendering: 'pixelated',
+          transform: [{ translateX: -frameIndex * AVATAR_SIZE }],
+          width: (AVATAR_SIZE / frameWidth) * frameWidth * animation.frameCount,
+        } as object
+      }
     />
   </View>
 );
 
 const FallbackAvatar = ({ state }: { state: AvatarAnimationKey }) => (
-  <View style={[styles.fallbackAvatar, { backgroundColor: state === 'run' ? COLORS.danger : state === 'walk' ? COLORS.challengeSoft : COLORS.stoppedSoft }]}>
+  <View
+    style={[
+      styles.fallbackAvatar,
+      {
+        backgroundColor: state === 'run' ? COLORS.danger : state === 'walk' ? COLORS.challengeSoft : COLORS.stoppedSoft,
+      },
+    ]}
+  >
     <Text style={styles.fallbackText}>{state === 'run' ? '>>' : state === 'walk' ? '>' : '*'}</Text>
   </View>
 );

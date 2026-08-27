@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { StyleSheet } from 'react-native';
 
 import { COLORS, THEME } from '../../constants';
 import { AnimatedPressable } from '../AnimatedPressable';
+
+import type { StyleProp, ViewStyle } from 'react-native';
 
 type HeaderIconButtonProps = {
   accessibilityLabel: string;

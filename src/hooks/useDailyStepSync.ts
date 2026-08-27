@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState } from 'react-native';
 
-import { StepDataSource } from '../health/types';
-import { ToastMessageItem } from '../components/ToastMessage';
-import { DailySyncSnapshot } from '../services/dailyStepSync';
 import { syncSnapshotAndBackfill } from '../services/syncService';
+
+import type { ToastMessageItem } from '../components/ToastMessage';
+import type { StepDataSource } from '../health/types';
+import type { DailySyncSnapshot } from '../services/dailyStepSync';
+import type { AppStateStatus } from 'react-native';
 
 type DailyStepSyncParams = {
   goal: number;
@@ -33,15 +35,21 @@ export const useDailyStepSync = ({ goal, onMessage, source, steps, userId }: Dai
     };
   }, [goal, source, steps, userId]);
 
-  const syncSnapshot = useCallback(async (
-    snapshot: DailySyncSnapshot,
-    options: { backfillDays?: number; notify: boolean; showNoChanges?: boolean } = { notify: false },
-  ): Promise<void> => {
-    const result = await syncSnapshotAndBackfill(snapshot, { backfillDays: options.backfillDays, skipUnchanged: true });
-    if (options.notify && (result.changed || options.showNoChanges || !result.ok)) {
-      onMessage(result.message, result.ok ? 'standard' : 'error');
-    }
-  }, [onMessage]);
+  const syncSnapshot = useCallback(
+    async (
+      snapshot: DailySyncSnapshot,
+      options: { backfillDays?: number; notify: boolean; showNoChanges?: boolean } = { notify: false },
+    ): Promise<void> => {
+      const result = await syncSnapshotAndBackfill(snapshot, {
+        backfillDays: options.backfillDays,
+        skipUnchanged: true,
+      });
+      if (options.notify && (result.changed || options.showNoChanges || !result.ok)) {
+        onMessage(result.message, result.ok ? 'standard' : 'error');
+      }
+    },
+    [onMessage],
+  );
 
   const syncNow = useCallback(async (): Promise<void> => {
     setIsSyncing(true);

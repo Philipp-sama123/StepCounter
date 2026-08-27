@@ -1,3 +1,6 @@
+import { formatClockDuration } from '../shared/format/metrics';
+import { getVectorMagnitude } from '../shared/math/vector';
+
 export type AccelerometerSample = {
   magnitude: number;
   timestamp: string;
@@ -22,21 +25,14 @@ type RollingAverageInput = {
   accelerometerLog: AccelerometerSample[];
   gyroscopeLog: GenericSensorSample[];
   nowMs: number;
-  sensorLog: Array<{ delta: number; timestamp: string }>;
+  sensorLog: { delta: number; timestamp: string }[];
 };
 
-export const formatDuration = (durationMs: number): string => {
-  const totalSeconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-};
+export const formatDuration = formatClockDuration;
 
-export const getAccelerationMagnitude = (x: number, y: number, z: number): number =>
-  Math.sqrt(x * x + y * y + z * z);
+export const getAccelerationMagnitude = getVectorMagnitude;
 
-export const getVectorMagnitude = (x: number, y: number, z: number): number =>
-  Math.sqrt(x * x + y * y + z * z);
+export { getVectorMagnitude } from '../shared/math/vector';
 
 export const formatAxis = (value: number): string => value.toFixed(2);
 
@@ -51,12 +47,16 @@ export const getRollingAverages = ({
   const stepsPerMinute = recentStepEvents.reduce((total, entry) => total + Math.max(0, entry.delta), 0);
 
   return {
-    accelerometerMagnitude: averageNumbers(accelerometerLog
-      .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
-      .map((entry) => entry.magnitude)),
-    gyroscopeMagnitude: averageNumbers(gyroscopeLog
-      .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
-      .map((entry) => parseLeadingNumber(entry.headline))),
+    accelerometerMagnitude: averageNumbers(
+      accelerometerLog
+        .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
+        .map((entry) => entry.magnitude),
+    ),
+    gyroscopeMagnitude: averageNumbers(
+      gyroscopeLog
+        .filter((entry) => new Date(entry.timestamp).getTime() >= cutoffMs)
+        .map((entry) => parseLeadingNumber(entry.headline)),
+    ),
     stepsPerMinute,
   };
 };

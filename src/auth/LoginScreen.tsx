@@ -1,12 +1,23 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useAuth } from './AuthContext';
-import { COLORS } from '../constants';
 import { BackgroundGradient } from '../components/layout/BackgroundGradient';
+import { COLORS } from '../constants';
 import { missingFirebaseConfigKeys } from '../firebase/config';
 import { triggerSelectionHaptic } from '../utils/haptics';
+
+import { useAuth } from './AuthContext';
 
 export const LoginScreen = () => {
   const { isConfigured, registerWithEmail, signInWithEmail } = useAuth();
@@ -55,7 +66,10 @@ export const LoginScreen = () => {
       setIsSubmitting(true);
       setError(null);
       await sendPasswordReset(email.trim());
-      Alert.alert('Password reset', 'If that email is registered, you will receive instructions to reset your password.');
+      Alert.alert(
+        'Password reset',
+        'If that email is registered, you will receive instructions to reset your password.',
+      );
     } catch (err) {
       logAuthError(err);
       setError(getFriendlyAuthError(err));
@@ -126,9 +140,17 @@ export const LoginScreen = () => {
               void handleEmailSubmit();
             }}
             onPressIn={triggerSelectionHaptic}
-            style={({ pressed }) => [styles.primaryButton, pressed ? styles.pressed : null, !isConfigured ? styles.disabled : null]}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              pressed ? styles.pressed : null,
+              !isConfigured ? styles.disabled : null,
+            ]}
           >
-            {isSubmitting ? <ActivityIndicator color={COLORS.text} /> : <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>}
+            {isSubmitting ? (
+              <ActivityIndicator color={COLORS.text} />
+            ) : (
+              <Text style={styles.primaryButtonText}>{isRegistering ? 'Create account' : 'Sign in'}</Text>
+            )}
           </Pressable>
 
           <Pressable

@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
 import { Accelerometer, Gyroscope } from 'expo-sensors';
+import { useEffect, useRef, useState } from 'react';
 
+import { getVectorMagnitude } from '../shared/math/vector';
 import {
   readCalculatedStepHistory,
   readCalculatedStepsForDate,
   saveCalculatedStepsForDate,
 } from '../storage/calculatedStepStorage';
 import { readBodyProfile } from '../storage/profileStorage';
-import { getTodayString, StepHistoryEntry } from '../storage/stepStorage';
+import { getTodayString } from '../storage/stepStorage';
+
+import type { StepHistoryEntry } from '../features/steps/domain/models';
 
 type CalculatedStepLogEntry = {
   accelerationG: number;
@@ -153,9 +156,11 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
         return;
       }
 
-      setDebugMessage(hasGyroscope
-        ? 'Calculated detector is running from acceleration peaks with rotation filtering.'
-        : 'Calculated detector is running from acceleration peaks. Rotation filtering unavailable.');
+      setDebugMessage(
+        hasGyroscope
+          ? 'Calculated detector is running from acceleration peaks with rotation filtering.'
+          : 'Calculated detector is running from acceleration peaks. Rotation filtering unavailable.',
+      );
 
       if (hasGyroscope) {
         Gyroscope.setUpdateInterval(GYROSCOPE_INTERVAL_MS);
@@ -211,13 +216,18 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
       setIsTimingTooFast(timingTooFast);
       setIsRotationTooHigh(rotationTooHigh);
       setSampleCount(sampleCountRef.current);
-      setSamples((currentSamples) => [...currentSamples, {
-        elapsedMsSinceStep: hasPreviousStep ? elapsedMs : null,
-        motionG: motion,
-        rotationRadPerSecond: rotationMagnitude,
-        thresholdG: adaptiveThreshold,
-        timestamp: new Date().toISOString(),
-      }].slice(-48));
+      setSamples((currentSamples) =>
+        [
+          ...currentSamples,
+          {
+            elapsedMsSinceStep: hasPreviousStep ? elapsedMs : null,
+            motionG: motion,
+            rotationRadPerSecond: rotationMagnitude,
+            thresholdG: adaptiveThreshold,
+            timestamp: new Date().toISOString(),
+          },
+        ].slice(-48),
+      );
       previousMotionRef.current = motion;
 
       if (!isPeak || !hasHumanTiming || !hasEnoughStillness) {
@@ -238,18 +248,25 @@ export const useCalculatedStepCounter = (enabled = true): UseCalculatedStepCount
       setSteps(nextSteps);
       setConfidence(nextConfidence);
       setDetectorDecision('accepted');
-      setDetectorReason('Accepted: motion crossed the threshold, timing looked like walking, and rotation was calm enough.');
+      setDetectorReason(
+        'Accepted: motion crossed the threshold, timing looked like walking, and rotation was calm enough.',
+      );
       setCadenceStepsPerMinute(updateCadence(now, stepTimestampsRef.current));
       updateBodyEstimates(nextSteps);
-      setLog((currentLog) => [{
-        accelerationG: magnitudeG,
-        confidence: nextConfidence,
-        motionG: motion,
-        rotationRadPerSecond: rotationMagnitude,
-        steps: nextSteps,
-        thresholdG: adaptiveThreshold,
-        timestamp: nextTimestamp,
-      }, ...currentLog].slice(0, 20));
+      setLog((currentLog) =>
+        [
+          {
+            accelerationG: magnitudeG,
+            confidence: nextConfidence,
+            motionG: motion,
+            rotationRadPerSecond: rotationMagnitude,
+            steps: nextSteps,
+            thresholdG: adaptiveThreshold,
+            timestamp: nextTimestamp,
+          },
+          ...currentLog,
+        ].slice(0, 20),
+      );
 
       await saveCalculatedStepsForDate(today, nextSteps);
       setHistory(await readCalculatedStepHistory(HISTORY_DAYS));
@@ -352,6 +369,3 @@ const getStrideMeters = (heightCm: number): number => {
 
   return Math.max(0.45, Math.min(1.05, heightCm * 0.00415));
 };
-
-const getVectorMagnitude = (x: number, y: number, z: number): number =>
-  Math.sqrt(x * x + y * y + z * z);

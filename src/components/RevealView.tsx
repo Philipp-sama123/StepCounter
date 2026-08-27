@@ -1,5 +1,8 @@
-import { ReactNode, useEffect, useRef } from 'react';
-import { Animated, StyleProp, ViewStyle } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated } from 'react-native';
+
+import type { ReactNode } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
 
 type RevealViewProps = {
   children: ReactNode;
@@ -42,9 +45,5 @@ export const RevealView = ({ children, delay = 0, replayKey = 0, style }: Reveal
     ]).start();
   }, [delay, opacity, replayKey, scale, translateY]);
 
-  return (
-    <Animated.View style={[style, { opacity, transform: [{ translateY }, { scale }] }]}>
-      {children}
-    </Animated.View>
-  );
+  return <Animated.View style={[style, { opacity, transform: [{ translateY }, { scale }] }]}>{children}</Animated.View>;
 };

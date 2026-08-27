@@ -1,13 +1,19 @@
 import { readTodayStepsFromSystemHealth } from '../health/stepsProvider';
-import { StepDataSource } from '../health/types';
+import { SingleFlight } from '../shared/async/SingleFlight';
 import { getTodayString, readGoal, readStepsForDate, saveStepsForDate } from '../storage/stepStorage';
-import { DailySyncSnapshot, syncDailyStepSnapshot } from './dailyStepSync';
+
+import { syncDailyStepSnapshot } from './dailyStepSync';
+
+import type { DailySyncSnapshot } from './dailyStepSync';
+import type { StepDataSource } from '../health/types';
 
 type SyncTodayParams = {
   fallbackSource?: StepDataSource;
   fallbackSteps?: number;
   userId: string | null;
 };
+
+const syncCoordinator = new SingleFlight<string>();
 
 export const syncTodayAndBackfill = async ({
   fallbackSource = 'unavailable',
@@ -21,23 +27,27 @@ export const syncTodayAndBackfill = async ({
   ]);
   const snapshot: DailySyncSnapshot = systemResult.available
     ? {
-      goal,
-      source: systemResult.source,
-      steps: systemResult.steps,
-      userId,
-    }
+        goal,
+        source: systemResult.source,
+        steps: systemResult.steps,
+        userId,
+      }
     : {
-      goal,
-      source: fallbackSource,
-      steps: Math.max(localSteps, fallbackSteps),
-      userId,
-    };
+        goal,
+        source: fallbackSource,
+        steps: Math.max(localSteps, fallbackSteps),
+        userId,
+      };
 
   if (systemResult.available && systemResult.steps > 0) {
     await saveStepsForDate(getTodayString(), systemResult.steps);
   }
 
-  return syncDailyStepSnapshot(snapshot);
+  return syncSnapshotAndBackfill(snapshot);
 };
 
-export const syncSnapshotAndBackfill = syncDailyStepSnapshot;
+export const syncSnapshotAndBackfill = (
+  snapshot: DailySyncSnapshot,
+  options?: Parameters<typeof syncDailyStepSnapshot>[1],
+): ReturnType<typeof syncDailyStepSnapshot> =>
+  syncCoordinator.run(snapshot.userId ?? 'anonymous', () => syncDailyStepSnapshot(snapshot, options));

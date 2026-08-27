@@ -1,4 +1,4 @@
-import { UserBodyProfile } from '../storage/profileStorage';
+import type { UserBodyProfile } from '../features/profile/domain/models';
 
 const DEFAULT_STEP_LENGTH_METERS = 0.75;
 const WALKING_KCAL_PER_KG_KM = 0.57;

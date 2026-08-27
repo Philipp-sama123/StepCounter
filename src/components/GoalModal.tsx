@@ -1,14 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { COLORS, MAX_GOAL, MIN_GOAL } from '../constants';
 import { triggerSelectionHaptic } from '../utils/haptics';
@@ -63,7 +54,12 @@ export const GoalModal = ({
           />
           <Text style={styles.helper}>{helperText}</Text>
           <View style={styles.actions}>
-            <Pressable accessibilityRole="button" onPress={onClose} onPressIn={triggerSelectionHaptic} style={[styles.button, styles.secondaryButton]}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              onPressIn={triggerSelectionHaptic}
+              style={[styles.button, styles.secondaryButton]}
+            >
               <Text style={styles.secondaryButtonText}>Cancel</Text>
             </Pressable>
             <Pressable

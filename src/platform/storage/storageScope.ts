@@ -14,7 +14,6 @@ const LEGACY_EXACT_KEYS = new Set([
   'challengeGoal',
   'dailyChallengeGoal',
   'dashboard:avatar-visible',
-  'debug:selected-avatar',
   'goal',
   'lastDate',
   'profile:body',

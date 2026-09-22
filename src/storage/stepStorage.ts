@@ -4,26 +4,17 @@ import {
   LAST_SEVEN_DAYS,
   STEP_HISTORY_KEY_PREFIX,
   STORAGE_KEYS,
-  WANK_SESSION_KEY_PREFIX,
 } from '../constants';
-import { isChallengeSession, isWankSession } from '../features/challenges/domain/models';
+import { isChallengeSession } from '../features/challenges/domain/models';
 import { userScopedStorage as AsyncStorage } from '../platform/storage/userScopedStorage';
 import { getRecentDateStrings, parseLocalDate } from '../shared/date/localDate';
 import { parseJsonArray } from '../shared/validation/json';
 
-import type { ChallengeSession, WankSession } from '../features/challenges/domain/models';
+import type { ChallengeSession } from '../features/challenges/domain/models';
 import type { StepHistoryEntry } from '../features/steps/domain/models';
 
-export type {
-  ChallengeSession,
-  WankReplayEvent,
-  WankReplaySample,
-  WankSession,
-} from '../features/challenges/domain/models';
+export type { ChallengeSession } from '../features/challenges/domain/models';
 export type { StepHistoryEntry } from '../features/steps/domain/models';
-
-const MAX_WANK_SESSIONS_PER_DAY = 20;
-const MAX_WANK_SESSIONS_TOTAL = 120;
 
 export type StepCounterState = {
   baseline: number;
@@ -266,113 +257,6 @@ export const readAllChallengeSessions = async (): Promise<(ChallengeSession & { 
       .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
   } catch (error) {
     console.warn('Unable to read all challenge sessions.', error);
-    return [];
-  }
-};
-
-export const getWankSessionKey = (date: string): string => `${WANK_SESSION_KEY_PREFIX}${date}`;
-
-export const saveWankSession = async (date: string, session: WankSession): Promise<void> => {
-  try {
-    const key = getWankSessionKey(date);
-    const existing = await AsyncStorage.getItem(key);
-    const sessions = parseJsonArray(existing, isWankSession);
-    sessions.push(session);
-    await AsyncStorage.setItem(
-      key,
-      JSON.stringify(sortWankSessionsNewestFirst(sessions).slice(0, MAX_WANK_SESSIONS_PER_DAY)),
-    );
-    await pruneWankSessionStorage();
-  } catch (error) {
-    console.warn(`Unable to save wank session for ${date}.`, error);
-  }
-};
-
-export const readWankSessions = async (date: string): Promise<WankSession[]> => {
-  try {
-    const raw = await AsyncStorage.getItem(getWankSessionKey(date));
-    return parseJsonArray(raw, isWankSession);
-  } catch (error) {
-    console.warn(`Unable to read wank sessions for ${date}.`, error);
-    return [];
-  }
-};
-
-const pruneWankSessionStorage = async (): Promise<void> => {
-  const keys = await AsyncStorage.getAllKeys();
-  const wankKeys = keys.filter((key) => key.startsWith(WANK_SESSION_KEY_PREFIX));
-  const values = await AsyncStorage.multiGet(wankKeys);
-  const allSessions = values.flatMap(([key, raw]) => {
-    if (raw === null) {
-      return [];
-    }
-
-    const date = key.replace(WANK_SESSION_KEY_PREFIX, '');
-    const sessions = parseJsonArray(raw, isWankSession);
-    return sessions.map((session) => ({ ...session, date }));
-  });
-  const sessionsToKeep = sortWankSessionsNewestFirst(allSessions).slice(0, MAX_WANK_SESSIONS_TOTAL);
-  const sessionsByDate = sessionsToKeep.reduce<Record<string, WankSession[]>>((result, sessionWithDate) => {
-    const { date, ...session } = sessionWithDate;
-    result[date] = [...(result[date] ?? []), session];
-    return result;
-  }, {});
-  const nextDates = new Set(Object.keys(sessionsByDate));
-  const keysToRemove = wankKeys.filter((key) => !nextDates.has(key.replace(WANK_SESSION_KEY_PREFIX, '')));
-  const entriesToWrite = Object.entries(sessionsByDate).map(
-    ([sessionDate, sessions]) =>
-      [
-        getWankSessionKey(sessionDate),
-        JSON.stringify(sortWankSessionsNewestFirst(sessions).slice(0, MAX_WANK_SESSIONS_PER_DAY)),
-      ] as [string, string],
-  );
-
-  await Promise.all([
-    keysToRemove.length === 0 ? Promise.resolve() : AsyncStorage.multiRemove(keysToRemove),
-    entriesToWrite.length === 0 ? Promise.resolve() : AsyncStorage.multiSet(entriesToWrite),
-  ]);
-};
-
-const sortWankSessionsNewestFirst = <T extends Pick<WankSession, 'startedAt'>>(sessions: T[]): T[] =>
-  [...sessions].sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
-
-export const readWankSessionsForRecentDays = async (dayCount: number): Promise<(WankSession & { date: string })[]> => {
-  const dates = getRecentDateStrings(dayCount);
-
-  const sessionsByDate = await Promise.all(
-    dates.map(async (date) => ({
-      date,
-      sessions: await readWankSessions(date),
-    })),
-  );
-
-  return sessionsByDate
-    .flatMap(({ date, sessions }) => sessions.map((session) => ({ ...session, date })))
-    .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
-};
-
-export const readAllWankSessions = async (): Promise<(WankSession & { date: string })[]> => {
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    const wankKeys = keys
-      .filter((key) => key.startsWith(WANK_SESSION_KEY_PREFIX))
-      .sort()
-      .reverse();
-    const values = await AsyncStorage.multiGet(wankKeys);
-
-    return values
-      .flatMap(([key, raw]) => {
-        if (raw === null) {
-          return [];
-        }
-
-        const date = key.replace(WANK_SESSION_KEY_PREFIX, '');
-        const sessions = parseJsonArray(raw, isWankSession);
-        return sessions.map((session) => ({ ...session, date }));
-      })
-      .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime());
-  } catch (error) {
-    console.warn('Unable to read all wank sessions.', error);
     return [];
   }
 };

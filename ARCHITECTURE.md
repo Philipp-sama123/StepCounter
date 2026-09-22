@@ -5,16 +5,40 @@ StepCounter uses a feature-first modular monolith. Expo Router files are stable 
 ## Dependency direction
 
 ```text
-app routes -> feature presentation -> application/domain
+app routes -> feature presentation -> application -> domain
                                       ^
-                         platform and data adapters
+                             infrastructure adapters
 ```
 
 - `app/` contains route names and navigation configuration only.
-- `src/features/` owns feature screens and domain models.
+- `src/features/<feature>/domain` owns business models and deterministic rules.
+- `src/features/<feature>/application` owns use cases and data orchestration.
+- `src/features/<feature>/infrastructure` owns adapters for persistence, cloud, and device APIs.
+- `src/features/<feature>/presentation` owns screens, hooks, and feature-owned UI adapters.
 - `src/platform/` owns device-specific infrastructure such as scoped local storage.
-- `src/shared/` contains platform-independent date, formatting, math, and validation utilities.
-- `src/firebase/`, `src/health/`, `src/storage/`, and `src/services/` are compatibility adapters. New domain types must not be declared in these folders.
+- `src/shared/` contains platform-independent date, formatting, math, validation, and reusable UI primitives.
+- `src/firebase/`, `src/health/`, `src/storage/`, `src/services/`, and `src/components/` are compatibility adapters during the migration. New presentation code must use its owning feature boundary instead of importing these folders directly.
+
+## Feature layout
+
+```text
+src/
+  features/
+    steps/
+      domain/             # StepDay, goals, reconciliation
+      application/        # history and sync use cases
+      infrastructure/     # local, Firestore, and system-health boundaries
+      presentation/       # tracking hooks and step UI
+    profile/
+    sharing/              # optional social feature
+    challenges/           # optional session feature
+  shared/
+    ui/                   # reusable, feature-neutral controls
+    date/
+    format/
+```
+
+The current compatibility modules retain their existing storage keys and APIs. They can be retired only after all callers have crossed the corresponding feature boundary and a migration release has shipped.
 
 ## Data ownership
 

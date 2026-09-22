@@ -1,5 +1,5 @@
 import { readBodyProfile } from '../../../storage/profileStorage';
-import { readGoal, readLastSevenDays, readRecentDays } from '../../../storage/stepStorage';
+import { readGoal, readLastSevenDays, readRecentDays } from '../../steps/infrastructure/localStepRepository';
 
 import type { UserBodyProfile } from '../../profile/domain/models';
 import type { StepHistoryEntry } from '../../steps/domain/models';

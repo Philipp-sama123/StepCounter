@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { COLORS } from '../../constants';
-import { formatDuration } from '../../utils/challengeMetrics';
+import { formatClockDuration as formatDuration } from '../../shared/format/metrics';
 
 export type ChallengeReward = {
   durationMs: number;

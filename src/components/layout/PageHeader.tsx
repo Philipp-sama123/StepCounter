@@ -32,15 +32,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   subtitle: {
-    color: COLORS.mutedText,
-    fontSize: 14,
+    color: COLORS.success,
+    fontSize: 12,
     fontWeight: '800',
-    marginBottom: 4,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    textTransform: 'uppercase',
   },
   title: {
     color: COLORS.text,
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: '900',
+    letterSpacing: -0.6,
   },
   accessory: {
     alignItems: 'center',

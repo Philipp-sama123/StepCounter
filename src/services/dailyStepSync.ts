@@ -6,7 +6,6 @@ import { getRecentDateStrings } from '../shared/date/localDate';
 import { getTodayString, readChallengeSessions, saveStepsForDate } from '../storage/stepStorage';
 
 import { publishOwnSharedProfileSnapshot } from './sharedProfilePublish';
-import { appendSyncDiagnostic } from './syncDiagnostics';
 
 import type { StepDataSource } from '../health/types';
 
@@ -67,15 +66,6 @@ export const syncDailyStepSnapshot = async (
       };
     }
 
-    await appendSyncDiagnostic({
-      date: today,
-      existingSteps: existing?.steps ?? null,
-      finalSteps: existing?.steps ?? null,
-      reason: 'today-zero-no-backfill',
-      source: snapshot.source,
-      status: 'skipped',
-      systemSteps: 0,
-    });
     return { changed: false, message: 'No Health Connect changes to save.', ok: true };
   }
 
@@ -101,15 +91,6 @@ export const syncDailyStepSnapshot = async (
       };
     }
 
-    await appendSyncDiagnostic({
-      date: today,
-      existingSteps: existing.steps,
-      finalSteps: bestTodaySteps,
-      reason: 'today-unchanged',
-      source: snapshot.source,
-      status: 'skipped',
-      systemSteps: snapshot.steps,
-    });
     return { changed: false, message: 'No changes to save.', ok: true };
   }
 
@@ -120,16 +101,6 @@ export const syncDailyStepSnapshot = async (
     source: snapshot.source,
     steps: bestTodaySteps,
     userId: snapshot.userId,
-  });
-
-  await appendSyncDiagnostic({
-    date: today,
-    existingSteps: existing?.steps ?? null,
-    finalSteps: result.ok ? bestTodaySteps : (existing?.steps ?? null),
-    reason: result.ok ? 'today-saved' : result.message,
-    source: snapshot.source,
-    status: result.ok ? 'changed' : 'failed',
-    systemSteps: snapshot.steps,
   });
 
   if (result.ok) {
@@ -169,28 +140,10 @@ const backfillRecentDailySteps = async ({
       const systemResult = systemResults[date];
       if (systemResult === undefined) {
         failed += 1;
-        await appendSyncDiagnostic({
-          date,
-          existingSteps: existingDailySteps[date]?.steps ?? null,
-          finalSteps: existingDailySteps[date]?.steps ?? null,
-          reason: 'backfill-missing-system-result',
-          source: 'unavailable',
-          status: 'failed',
-          systemSteps: null,
-        });
         continue;
       }
 
       if (!systemResult.available || systemResult.steps === 0) {
-        await appendSyncDiagnostic({
-          date,
-          existingSteps: existingDailySteps[date]?.steps ?? null,
-          finalSteps: existingDailySteps[date]?.steps ?? null,
-          reason: systemResult.available ? 'backfill-zero-system-steps' : systemResult.reason,
-          source: systemResult.source,
-          status: 'skipped',
-          systemSteps: systemResult.available ? systemResult.steps : null,
-        });
         continue;
       }
 
@@ -212,15 +165,6 @@ const backfillRecentDailySteps = async ({
           steps,
         })
       ) {
-        await appendSyncDiagnostic({
-          date,
-          existingSteps: existing.steps,
-          finalSteps: steps,
-          reason: 'backfill-unchanged',
-          source: systemResult.source,
-          status: 'skipped',
-          systemSteps: systemResult.steps,
-        });
         continue;
       }
 
@@ -239,27 +183,9 @@ const backfillRecentDailySteps = async ({
       } else {
         failed += 1;
       }
-      await appendSyncDiagnostic({
-        date,
-        existingSteps: existing?.steps ?? null,
-        finalSteps: result.ok ? steps : (existing?.steps ?? null),
-        reason: result.ok ? 'backfill-saved' : result.message,
-        source: systemResult.source,
-        status: result.ok ? 'changed' : 'failed',
-        systemSteps: systemResult.steps,
-      });
     } catch (error) {
       failed += 1;
       console.warn('Unable to backfill daily Health Connect steps.', { date, error });
-      await appendSyncDiagnostic({
-        date,
-        existingSteps: existingDailySteps[date]?.steps ?? null,
-        finalSteps: existingDailySteps[date]?.steps ?? null,
-        reason: 'backfill-error',
-        source: 'unavailable',
-        status: 'failed',
-        systemSteps: null,
-      });
     }
   }
 

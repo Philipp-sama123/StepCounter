@@ -25,7 +25,7 @@ export type StepSensorLogEntry = {
 };
 
 export type UseStepCounterResult = {
-  debugMessage: string;
+  statusMessage: string;
   todaySteps: number;
   sensorLog: StepSensorLogEntry[];
   isAvailable: boolean;
@@ -47,7 +47,7 @@ const getStartOfToday = (): Date => {
 
 export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = true): UseStepCounterResult => {
   const [todaySteps, setTodaySteps] = useState(0);
-  const [debugMessage, setDebugMessage] = useState('Loading local step data...');
+  const [statusMessage, setStatusMessage] = useState('Loading local step data...');
   const [isAvailable, setIsAvailable] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -105,16 +105,16 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
       const permission = await Pedometer.requestPermissionsAsync();
       if (permission.granted) {
         setIsAvailable(true);
-        setDebugMessage('Permissions granted. Starting step tracking...');
+        setStatusMessage('Permissions granted. Starting step tracking...');
         // Could restart the pedometer here, but for simplicity, just update state
         return true;
       } else {
-        setDebugMessage('Permissions denied. Please enable in device settings.');
+        setStatusMessage('Permissions denied. Please enable in device settings.');
         return false;
       }
     } catch (error) {
       console.warn('Failed to request permissions.', error);
-      setDebugMessage('Failed to request permissions.');
+      setStatusMessage('Failed to request permissions.');
       return false;
     }
   };
@@ -141,7 +141,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
     if (!result.available) {
       isSystemHealthActiveRef.current = false;
       setSource((currentSource) => (currentSource === 'unavailable' ? 'unavailable' : currentSource));
-      setDebugMessage(result.reason);
+      setStatusMessage(result.reason);
       setIsRefreshing(false);
       return null;
     }
@@ -154,7 +154,9 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
     await saveStepsForDate(today, result.steps);
     setStatus('stopped');
     setLastSyncedAt(syncedAt);
-    setDebugMessage(`Loaded ${result.steps.toLocaleString()} steps from ${getStepSourceSentenceLabel(result.source)}.`);
+    setStatusMessage(
+      `Loaded ${result.steps.toLocaleString()} steps from ${getStepSourceSentenceLabel(result.source)}.`,
+    );
     setIsRefreshing(false);
     return result.steps;
   };
@@ -229,7 +231,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
           // Only system health
           const hasSystemHealthSteps = (await syncSystemHealthSteps()) !== null;
           if (!hasSystemHealthSteps) {
-            setDebugMessage('System health data unavailable.');
+            setStatusMessage('System health data unavailable.');
           }
           return;
         }
@@ -245,7 +247,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
         if (!available) {
           setStatus('unknown');
           if (mode === 'live') {
-            setDebugMessage('Pedometer unavailable for live tracking.');
+            setStatusMessage('Pedometer unavailable for live tracking.');
           }
           return;
         }
@@ -254,7 +256,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
         if (!isMounted || !permission.granted) {
           setStatus('unknown');
           if (mode === 'live') {
-            setDebugMessage('Pedometer permission denied.');
+            setStatusMessage('Pedometer permission denied.');
           }
           return;
         }
@@ -279,11 +281,11 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
             setSource(mode === 'live' ? 'live-sensor' : Platform.OS === 'ios' ? 'apple-health' : 'live-sensor');
             updateTodaySteps(initialSteps);
             await saveStepsForDate(today, initialSteps);
-            setDebugMessage(`Loaded ${initialSteps.toLocaleString()} steps from device sensors.`);
+            setStatusMessage(`Loaded ${initialSteps.toLocaleString()} steps from device sensors.`);
           } else if (isMounted) {
             setSource('live-sensor');
             updateTodaySteps(await readStepsForDate(today));
-            setDebugMessage('Using local step data.');
+            setStatusMessage('Using local step data.');
           }
         }
 
@@ -295,7 +297,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
         if (isMounted) {
           setIsAvailable(false);
           setStatus('unknown');
-          setDebugMessage('Step tracking is unavailable on this device.');
+          setStatusMessage('Step tracking is unavailable on this device.');
         }
       }
     };
@@ -333,7 +335,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
         : canQueryRangesRef.current;
 
   return {
-    debugMessage,
+    statusMessage,
     todaySteps,
     sensorLog,
     isAvailable,
@@ -344,7 +346,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
         if (mode === 'live') {
           if (Platform.OS === 'android') {
             const message = 'Live sensor refresh is not available on Android. Steps update in real-time.';
-            setDebugMessage(message);
+            setStatusMessage(message);
             return message;
           }
           // For live on iOS, refresh from pedometer range
@@ -353,11 +355,11 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
             updateTodaySteps(steps);
             await saveStepsForDate(getTodayString(), steps);
             const message = `Loaded ${steps.toLocaleString()} steps from device sensors.`;
-            setDebugMessage(`Refreshed ${steps.toLocaleString()} steps from sensors.`);
+            setStatusMessage(`Refreshed ${steps.toLocaleString()} steps from sensors.`);
             return message;
           } else {
             const message = 'Unable to refresh sensor data.';
-            setDebugMessage(message);
+            setStatusMessage(message);
             return message;
           }
         } else {
@@ -372,7 +374,7 @@ export const useStepCounter = (mode: StepTrackingMode = 'combined', enabled = tr
       } catch (error) {
         console.warn('Manual step refresh failed.', error);
         const message = 'Step refresh failed. Check permissions and try again.';
-        setDebugMessage(message);
+        setStatusMessage(message);
         setIsRefreshing(false);
         return message;
       }

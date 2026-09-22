@@ -1,65 +1,99 @@
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-import { AVATAR_STORAGE_KEY, AVATAR_VARIANTS, DEFAULT_AVATAR_VARIANT_KEY } from '../../config/avatarSprites';
+import { AVATAR_SPRITESHEET } from '../../config/avatarSprites';
 import { COLORS } from '../../constants';
-import { readAvatarPreferenceFromFirestore } from '../../firebase/avatarPreference';
-import { userScopedStorage as AsyncStorage } from '../../platform/storage/userScopedStorage';
 
-import type { AvatarAnimationConfig, AvatarAnimationKey, AvatarVariantKey } from '../../config/avatarSprites';
+import type { AvatarAnimationConfig, AvatarAnimationKey, AvatarClipKey } from '../../config/avatarSprites';
 import type { ImageSourcePropType } from 'react-native';
 
 type DashboardAvatarProps = {
   caption?: string;
+  speed?: number;
   state: AvatarAnimationKey;
-  userId: string | null;
 };
 
-const RING_SIZE = 154;
-const RING_STROKE = 9;
-const AVATAR_SIZE = 106;
+const RING_SIZE = 210;
+const RING_STROKE = 10;
+const AVATAR_WIDTH = 174;
+const AVATAR_HEIGHT = (AVATAR_WIDTH * AVATAR_SPRITESHEET.frameHeight) / AVATAR_SPRITESHEET.frameWidth;
 
-export const DashboardAvatar = ({ caption, state, userId }: DashboardAvatarProps) => {
-  const [selectedAvatarKey, setSelectedAvatarKey] = useState<AvatarVariantKey>(DEFAULT_AVATAR_VARIANT_KEY);
-  const selectedVariant = AVATAR_VARIANTS.find((variant) => variant.key === selectedAvatarKey) ?? AVATAR_VARIANTS[0];
-  const animation = selectedVariant.spritesheet.animations[state];
+export const DashboardAvatar = ({ caption, speed = 0, state }: DashboardAvatarProps) => {
+  const [animationState, setAnimationState] = useState<AvatarClipKey>('idle');
+  const animation = AVATAR_SPRITESHEET.animations[animationState];
   const [frameIndex, setFrameIndex] = useState(0);
   const pulseScale = useRef(new Animated.Value(1)).current;
+  const previousStateRef = useRef<AvatarAnimationKey>('idle');
+  const requestedStateRef = useRef<AvatarAnimationKey>(state);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isStartingRef = useRef(false);
 
-  const loadAvatarPreference = useCallback(async (): Promise<void> => {
-    const [storedKey, remoteKey] = await Promise.all([
-      AsyncStorage.getItem(AVATAR_STORAGE_KEY),
-      userId === null ? Promise.resolve(null) : readAvatarPreferenceFromFirestore(userId),
-    ]);
-    const nextKey = remoteKey ?? (isAvatarVariantKey(storedKey) ? storedKey : null);
+  useEffect(() => {
+    requestedStateRef.current = state;
 
-    if (nextKey !== null) {
-      setSelectedAvatarKey(nextKey);
-      await AsyncStorage.setItem(AVATAR_STORAGE_KEY, nextKey);
+    if (state === 'idle') {
+      if (transitionTimerRef.current !== null) {
+        clearTimeout(transitionTimerRef.current);
+        transitionTimerRef.current = null;
+      }
+      isStartingRef.current = false;
+      if (previousStateRef.current === 'idle') {
+        setAnimationState('idle');
+        setFrameIndex(0);
+      } else {
+        const stopAnimation = AVATAR_SPRITESHEET.animations.stop;
+        setAnimationState('stop');
+        setFrameIndex(0);
+        transitionTimerRef.current = setTimeout(
+          () => {
+            setAnimationState('idle');
+            setFrameIndex(0);
+          },
+          (stopAnimation.frameCount / stopAnimation.fps) * 1000,
+        );
+      }
+    } else if (previousStateRef.current === 'idle') {
+      if (transitionTimerRef.current !== null) {
+        clearTimeout(transitionTimerRef.current);
+      }
+      isStartingRef.current = true;
+      setAnimationState('move');
+      setFrameIndex(0);
+      const startAnimation = AVATAR_SPRITESHEET.animations.move;
+      transitionTimerRef.current = setTimeout(
+        () => {
+          isStartingRef.current = false;
+          setAnimationState(toLoopAnimation(requestedStateRef.current));
+          setFrameIndex(0);
+        },
+        (startAnimation.frameCount / startAnimation.fps) * 1000,
+      );
+    } else if (!isStartingRef.current) {
+      setAnimationState(toLoopAnimation(state));
+      setFrameIndex(0);
     }
-  }, [userId]);
+
+    previousStateRef.current = state;
+  }, [state]);
 
   useEffect(() => {
-    void loadAvatarPreference();
-  }, [loadAvatarPreference]);
-
-  useFocusEffect(
-    useCallback(() => {
-      void loadAvatarPreference();
-    }, [loadAvatarPreference]),
-  );
+    return () => {
+      if (transitionTimerRef.current !== null) {
+        clearTimeout(transitionTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
-    setFrameIndex(0);
-    const frameDurationMs = Math.max(60, Math.round(1000 / animation.fps));
+    const animationFps = getAnimationFps(animationState, animation.fps, speed);
+    const frameDurationMs = Math.max(24, Math.round(1000 / animationFps));
     const timer = setInterval(() => {
       setFrameIndex((currentFrame) => (currentFrame + 1) % animation.frameCount);
     }, frameDurationMs);
 
     return () => clearInterval(timer);
-  }, [animation.frameCount, animation.fps, selectedAvatarKey, state]);
+  }, [animation.frameCount, animation.fps, animationState, speed]);
 
   useEffect(() => {
     Animated.sequence([
@@ -106,33 +140,21 @@ export const DashboardAvatar = ({ caption, state, userId }: DashboardAvatarProps
           />
         </Svg>
         <Animated.View style={[styles.avatarFrame, { transform: [{ scale: pulseScale }] }]}>
-          {animation.source === null ? (
-            <FallbackAvatar state={state} />
-          ) : (
-            <SpriteFrame
-              animation={animation}
-              frameHeight={selectedVariant.spritesheet.frameHeight}
-              frameIndex={frameIndex}
-              frameWidth={selectedVariant.spritesheet.frameWidth}
-              source={animation.source}
-            />
-          )}
+          <SpriteFrame animation={animation} frameIndex={frameIndex} source={animation.source} />
         </Animated.View>
       </View>
-      <Text style={styles.caption}>{caption ?? `${selectedVariant.label} · ${getStateLabel(state)}`}</Text>
+      <Text style={styles.caption}>{caption ?? getStateLabel(state)}</Text>
     </View>
   );
 };
 
 type SpriteFrameProps = {
   animation: AvatarAnimationConfig;
-  frameHeight: number;
   frameIndex: number;
-  frameWidth: number;
   source: ImageSourcePropType;
 };
 
-const SpriteFrame = ({ animation, frameHeight, frameIndex, frameWidth, source }: SpriteFrameProps) => (
+const SpriteFrame = ({ animation, frameIndex, source }: SpriteFrameProps) => (
   <View style={styles.spriteViewport}>
     <Image
       fadeDuration={0}
@@ -141,26 +163,15 @@ const SpriteFrame = ({ animation, frameHeight, frameIndex, frameWidth, source }:
       source={source}
       style={
         {
-          height: (AVATAR_SIZE / frameHeight) * frameHeight,
-          imageRendering: 'pixelated',
-          transform: [{ translateX: -frameIndex * AVATAR_SIZE }],
-          width: (AVATAR_SIZE / frameWidth) * frameWidth * animation.frameCount,
+          height: AVATAR_HEIGHT * animation.rows,
+          transform: [
+            { translateX: -(frameIndex % AVATAR_SPRITESHEET.columns) * AVATAR_WIDTH },
+            { translateY: -Math.floor(frameIndex / AVATAR_SPRITESHEET.columns) * AVATAR_HEIGHT },
+          ],
+          width: AVATAR_WIDTH * AVATAR_SPRITESHEET.columns,
         } as object
       }
     />
-  </View>
-);
-
-const FallbackAvatar = ({ state }: { state: AvatarAnimationKey }) => (
-  <View
-    style={[
-      styles.fallbackAvatar,
-      {
-        backgroundColor: state === 'run' ? COLORS.danger : state === 'walk' ? COLORS.challengeSoft : COLORS.stoppedSoft,
-      },
-    ]}
-  >
-    <Text style={styles.fallbackText}>{state === 'run' ? '>>' : state === 'walk' ? '>' : '*'}</Text>
   </View>
 );
 
@@ -173,7 +184,24 @@ const getStateColor = (state: AvatarAnimationKey): string => {
     return COLORS.challenge;
   }
 
+  if (state === 'move') {
+    return COLORS.primary;
+  }
+
   return COLORS.stopped;
+};
+
+const toLoopAnimation = (state: AvatarAnimationKey): AvatarAnimationKey => {
+  if (state === 'run') return 'run';
+  if (state === 'idle') return 'idle';
+  return 'walk';
+};
+
+const getAnimationFps = (state: AvatarClipKey, baseFps: number, speed: number): number => {
+  const normalizedSpeed = Math.min(1, Math.max(0, speed));
+  if (state === 'idle' || state === 'move' || state === 'stop') return baseFps;
+  if (state === 'run') return 25 + normalizedSpeed * 17;
+  return 12 + normalizedSpeed * 20;
 };
 
 const getStateLabel = (state: AvatarAnimationKey): string => {
@@ -182,14 +210,15 @@ const getStateLabel = (state: AvatarAnimationKey): string => {
   }
 
   if (state === 'walk') {
-    return 'steps updated';
+    return 'walking';
   }
 
-  return 'waiting for Health Connect';
-};
+  if (state === 'move') {
+    return 'phone moving';
+  }
 
-const isAvatarVariantKey = (value: string | null): value is AvatarVariantKey =>
-  AVATAR_VARIANTS.some((variant) => variant.key === value);
+  return 'idle';
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -207,28 +236,16 @@ const styles = StyleSheet.create({
   },
   avatarFrame: {
     alignItems: 'center',
-    borderRadius: AVATAR_SIZE / 2,
-    height: AVATAR_SIZE,
+    borderRadius: AVATAR_WIDTH / 2,
+    height: AVATAR_HEIGHT,
     justifyContent: 'center',
     overflow: 'hidden',
-    width: AVATAR_SIZE,
+    width: AVATAR_WIDTH,
   },
   spriteViewport: {
-    height: AVATAR_SIZE,
+    height: AVATAR_HEIGHT,
     overflow: 'hidden',
-    width: AVATAR_SIZE,
-  },
-  fallbackAvatar: {
-    alignItems: 'center',
-    borderRadius: AVATAR_SIZE / 2,
-    height: AVATAR_SIZE,
-    justifyContent: 'center',
-    width: AVATAR_SIZE,
-  },
-  fallbackText: {
-    color: COLORS.text,
-    fontSize: 38,
-    fontWeight: '900',
+    width: AVATAR_WIDTH,
   },
   caption: {
     color: COLORS.mutedText,

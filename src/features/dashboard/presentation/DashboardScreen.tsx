@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Text, View } from 'react-native';
@@ -8,21 +9,23 @@ import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedStepCount } from '../../../components/AnimatedStepCount';
 import { DashboardAvatar } from '../../../components/avatar/DashboardAvatar';
 import { AppScreen } from '../../../components/layout/AppScreen';
-import { ProgressRing } from '../../../components/ProgressRing';
 import { RevealView } from '../../../components/RevealView';
 import { SegmentedTabs } from '../../../components/SegmentedTabs';
-import { StatusBadge } from '../../../components/StatusBadge';
-import { StepTrendChart } from '../../../components/StepTrendChart';
 import { ToastStack } from '../../../components/ToastMessage';
 import { SurfacePanel } from '../../../components/ui/SurfacePanel';
 import { COLORS, DEFAULT_GOAL } from '../../../constants';
-import { useDailyStepSync } from '../../../hooks/useDailyStepSync';
-import { useStepCounter } from '../../../hooks/useStepCounter';
 import { userScopedStorage as AsyncStorage } from '../../../platform/storage/userScopedStorage';
-import { getTodayString, readStepsForDate } from '../../../storage/stepStorage';
 import { estimateWalkingCalories } from '../../../utils/calories';
 import { triggerErrorHaptic, triggerSuccessHaptic } from '../../../utils/haptics';
 import { appendToastMessage } from '../../../utils/toastQueue';
+import { getAvatarStateForMotion } from '../../challenges/domain/motionActivity';
+import { useMotionChallengeCounter } from '../../challenges/presentation/useMotionChallengeCounter';
+import { getTodayString, readStepsForDate } from '../../steps/infrastructure/localStepRepository';
+import { ProgressRing } from '../../steps/presentation/components/ProgressRing';
+import { StatusBadge } from '../../steps/presentation/components/StatusBadge';
+import { StepTrendChart } from '../../steps/presentation/components/StepTrendChart';
+import { useDailyStepSync } from '../../steps/presentation/useDailyStepSync';
+import { useStepCounter } from '../../steps/presentation/useStepCounter';
 import {
   loadDashboardSnapshot,
   readDashboardGraph,
@@ -47,22 +50,17 @@ import {
 import { styles } from './DashboardScreen.styles';
 
 import type { ToastMessageItem } from '../../../components/ToastMessage';
-import type { AvatarAnimationKey } from '../../../config/avatarSprites';
 import type { UserBodyProfile } from '../../profile/domain/models';
 import type { StepHistoryEntry } from '../../steps/domain/models';
 import type { DashboardRange, DashboardRangeTotals as RangeTotals } from '../application/dashboardQueries';
 const DASHBOARD_AVATAR_VISIBLE_KEY = 'dashboard:avatar-visible';
-const AVATAR_RUN_HOLD_MS = 1600;
-const AVATAR_RUN_DELTA_STEPS = 24;
-const AVATAR_RUN_FAST_DELTA_STEPS = 8;
-const AVATAR_RUN_FAST_WINDOW_MS = 1200;
 
 export default function HomeScreen() {
-  const { debugMessage, isAvailable, isRefreshing, isSystemTotalAvailable, refreshSteps, source, status, todaySteps } =
+  const isFocused = useIsFocused();
+  const { isAvailable, isRefreshing, isSystemTotalAvailable, refreshSteps, source, status, statusMessage, todaySteps } =
     useStepCounter('combined');
   const { user } = useAuth();
   const [bodyProfile, setBodyProfile] = useState<UserBodyProfile | null>(null);
-  const [dashboardAvatarState, setDashboardAvatarState] = useState<AvatarAnimationKey>('idle');
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [graphRange, setGraphRange] = useState<DashboardRange>('week');
   const [graphReplayKey, setGraphReplayKey] = useState(0);
@@ -79,10 +77,12 @@ export default function HomeScreen() {
   const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const graphRangeRef = useRef<DashboardRange>(graphRange);
-  const dashboardAvatarIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastDashboardAvatarStepAtRef = useRef(0);
-  const previousDashboardAvatarStepsRef = useRef(todaySteps);
   const todayStepsRef = useRef(todaySteps);
+  const avatarMotion = useMotionChallengeCounter({
+    active: false,
+    debugEnabled: false,
+    enabled: isFocused && isDashboardAvatarVisible,
+  });
   const showServerToast = useCallback((message: string, variant: ToastMessageItem['variant'] = 'standard'): void => {
     if (variant === 'error') {
       triggerErrorHaptic();
@@ -142,9 +142,6 @@ export default function HomeScreen() {
     setIsDashboardAvatarVisible((isVisible) => {
       const nextValue = !isVisible;
       void AsyncStorage.setItem(DASHBOARD_AVATAR_VISIBLE_KEY, nextValue ? 'true' : 'false');
-      if (!nextValue) {
-        setDashboardAvatarState('idle');
-      }
       return nextValue;
     });
   }, []);
@@ -165,56 +162,6 @@ export default function HomeScreen() {
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (!isDashboardAvatarVisible) {
-      previousDashboardAvatarStepsRef.current = todaySteps;
-      setDashboardAvatarState('idle');
-      return;
-    }
-
-    if (dashboardAvatarIdleTimerRef.current !== null) {
-      clearTimeout(dashboardAvatarIdleTimerRef.current);
-      dashboardAvatarIdleTimerRef.current = null;
-    }
-
-    const previousSteps = previousDashboardAvatarStepsRef.current;
-    previousDashboardAvatarStepsRef.current = todaySteps;
-    const stepDelta = todaySteps - previousSteps;
-
-    if (status !== 'walking') {
-      setDashboardAvatarState('idle');
-      return;
-    }
-
-    const now = Date.now();
-    const previousStepAt = lastDashboardAvatarStepAtRef.current;
-    if (stepDelta > 0) {
-      lastDashboardAvatarStepAtRef.current = now;
-    }
-    const isFastUpdate =
-      stepDelta >= AVATAR_RUN_DELTA_STEPS ||
-      (previousStepAt > 0 &&
-        now - previousStepAt <= AVATAR_RUN_FAST_WINDOW_MS &&
-        stepDelta >= AVATAR_RUN_FAST_DELTA_STEPS);
-
-    setDashboardAvatarState(isFastUpdate ? 'run' : 'walk');
-
-    if (isFastUpdate) {
-      dashboardAvatarIdleTimerRef.current = setTimeout(() => {
-        setDashboardAvatarState('walk');
-      }, AVATAR_RUN_HOLD_MS);
-    }
-  }, [isDashboardAvatarVisible, status, todaySteps]);
-
-  useEffect(
-    () => () => {
-      if (dashboardAvatarIdleTimerRef.current !== null) {
-        clearTimeout(dashboardAvatarIdleTimerRef.current);
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     todayStepsRef.current = todaySteps;
@@ -346,7 +293,11 @@ export default function HomeScreen() {
         <Text style={styles.goalText}>Goal {goal.toLocaleString()}</Text>
 
         {isHeroToday && isDashboardAvatarVisible ? (
-          <DashboardAvatar state={dashboardAvatarState} userId={user?.uid ?? null} />
+          <DashboardAvatar
+            caption={`Detected: ${avatarMotion.activity}`}
+            speed={avatarMotion.speed}
+            state={getAvatarStateForMotion(avatarMotion.activity)}
+          />
         ) : null}
         {isHeroToday ? (
           <AnimatedPressable
@@ -489,7 +440,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.syncCopy}>
             <Text style={styles.syncTitle}>{isSystemTotalAvailable ? 'Health data connected' : 'Google Fit sync'}</Text>
-            <Text style={styles.syncText}>{debugMessage}</Text>
+            <Text style={styles.syncText}>{statusMessage}</Text>
           </View>
         </SurfacePanel>
       </RevealView>

@@ -1,6 +1,5 @@
 import { useIsFocused } from '@react-navigation/native';
 import { useFocusEffect } from 'expo-router';
-import { Accelerometer, Gyroscope } from 'expo-sensors';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, ScrollView, Text, View } from 'react-native';
 
@@ -8,9 +7,6 @@ import { useAuth } from '../../../auth/AuthContext';
 import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { AnimatedStepCount } from '../../../components/AnimatedStepCount';
 import { DashboardAvatar } from '../../../components/avatar/DashboardAvatar';
-import { ChallengeRewardOverlay } from '../../../components/challenge/ChallengeRewardOverlay';
-import { ChallengeSourceTabs } from '../../../components/challenge/ChallengeSourceTabs';
-import { MovementInsightPanel } from '../../../components/challenge/MovementInsightPanel';
 import { GoalModal } from '../../../components/GoalModal';
 import { AppScreen } from '../../../components/layout/AppScreen';
 import { HeaderIconButton } from '../../../components/layout/HeaderIconButton';
@@ -19,13 +15,10 @@ import { ProgressRing } from '../../../components/ProgressRing';
 import { SegmentedTabs } from '../../../components/SegmentedTabs';
 import { StatusBadge } from '../../../components/StatusBadge';
 import { ToastStack } from '../../../components/ToastMessage';
-import { AppButton } from '../../../components/ui/AppButton';
 import { MetricCard } from '../../../components/ui/MetricCard';
 import { SurfacePanel } from '../../../components/ui/SurfacePanel';
-import { COLORS, DEFAULT_GOAL, STATUS_STOPPED_DELAY_MS } from '../../../constants';
+import { COLORS, DEFAULT_GOAL } from '../../../constants';
 import { syncChallengeSession } from '../../../firebase/stepsSync';
-import { useCalculatedStepCounter } from '../../../hooks/useCalculatedStepCounter';
-import { useStepCounter } from '../../../hooks/useStepCounter';
 import { publishOwnSharedProfileSnapshot } from '../../../services/sharedProfilePublish';
 import { parseLocalDate } from '../../../shared/date/localDate';
 import { formatLongDuration as formatDuration } from '../../../shared/format/metrics';
@@ -41,46 +34,24 @@ import {
   saveChallengeSession,
   saveDailyChallengeGoal,
 } from '../../../storage/stepStorage';
-import {
-  formatAxis,
-  getAccelerationMagnitude,
-  getRollingAverages,
-  getVectorMagnitude,
-} from '../../../utils/challengeMetrics';
 import { triggerErrorHaptic, triggerSuccessHaptic } from '../../../utils/haptics';
 import { appendToastMessage } from '../../../utils/toastQueue';
+import { getAvatarStateForMotion } from '../domain/motionActivity';
 
 import { styles } from './ChallengeScreen.styles';
+import { ChallengeRewardOverlay } from './components/ChallengeRewardOverlay';
+import { MotionDebugPanel } from './components/MotionDebugPanel';
+import { useMotionChallengeCounter } from './useMotionChallengeCounter';
 
-import type { ChallengeReward } from '../../../components/challenge/ChallengeRewardOverlay';
-import type { ChallengeTrackingMode } from '../../../components/challenge/ChallengeSourceTabs';
+import type { ChallengeReward } from './components/ChallengeRewardOverlay';
 import type { ToastMessageItem } from '../../../components/ToastMessage';
 import type { AvatarAnimationKey } from '../../../config/avatarSprites';
-import type { StepDataSource } from '../../../health/types';
-import type { WalkingStatus } from '../../../hooks/useStepCounter';
-import type { AccelerometerSample, GenericSensorSample } from '../../../utils/challengeMetrics';
 import type { ChallengeSession } from '../domain/models';
 
 type ChallengeHistoryRange = 'day' | 'week' | 'all';
 
 export default function ChallengeScreen() {
-  const [trackingMode, setTrackingMode] = useState<ChallengeTrackingMode>('live');
   const isFocused = useIsFocused();
-  const isLiveMode = trackingMode === 'live';
-  const systemStepCounter = useStepCounter('system', isFocused && !isLiveMode);
-  const calculatedStepCounter = useCalculatedStepCounter(isFocused && isLiveMode);
-  const debugMessage = isLiveMode ? calculatedStepCounter.debugMessage : systemStepCounter.debugMessage;
-  const isAvailable = isLiveMode ? calculatedStepCounter.isAvailable : systemStepCounter.isAvailable;
-  const isRefreshing = isLiveMode ? false : systemStepCounter.isRefreshing;
-  const refreshSteps = systemStepCounter.refreshSteps;
-  const requestPermissions = systemStepCounter.requestPermissions;
-  const source: StepDataSource = isLiveMode ? 'live-sensor' : systemStepCounter.source;
-  const status: WalkingStatus = isLiveMode
-    ? getCalculatedWalkingStatus(calculatedStepCounter.detectorDecision, calculatedStepCounter.elapsedMsSinceStep)
-    : systemStepCounter.status;
-  const todaySteps = isLiveMode ? calculatedStepCounter.steps : systemStepCounter.todaySteps;
-  const canRefresh = !isLiveMode && systemStepCounter.canRefresh;
-  const sensorLog = isLiveMode ? getCalculatedSensorLog(calculatedStepCounter.log) : systemStepCounter.sensorLog;
   const { signOutUser, user } = useAuth();
   const [goal, setGoal] = useState(DEFAULT_GOAL);
   const [challengeGoal, setChallengeGoal] = useState(DEFAULT_GOAL);
@@ -92,20 +63,20 @@ export default function ChallengeScreen() {
   const [isGoalModalVisible, setIsGoalModalVisible] = useState(false);
   const [isChallengeActive, setIsChallengeActive] = useState(false);
   const [activeChallengeGoal, setActiveChallengeGoal] = useState<number | null>(null);
-  const [challengeStartSteps, setChallengeStartSteps] = useState<number | null>(null);
   const [challengeStartAt, setChallengeStartAt] = useState<number | null>(null);
   const [progressResetKey, setProgressResetKey] = useState(0);
   const [stepReplayKey, setStepReplayKey] = useState(0);
   const [sessionClock, setSessionClock] = useState(Date.now());
-  const [toastMessages, setToastMessages] = useState<ToastMessageItem[]>([]);
   const [sessionToastMessages, setSessionToastMessages] = useState<ToastMessageItem[]>([]);
   const [serverToastMessages, setServerToastMessages] = useState<ToastMessageItem[]>([]);
   const [challengeReward, setChallengeReward] = useState<ChallengeReward | null>(null);
-  const [, setAccelerometerAvailable] = useState<boolean | null>(null);
-  const [accelerometerLog, setAccelerometerLog] = useState<AccelerometerSample[]>([]);
-  const [, setGyroscopeAvailable] = useState<boolean | null>(null);
-  const [gyroscopeLog, setGyroscopeLog] = useState<GenericSensorSample[]>([]);
+  const [isMotionDebugVisible, setIsMotionDebugVisible] = useState(false);
   const sessionOpacity = useRef(new Animated.Value(1)).current;
+  const motionCounter = useMotionChallengeCounter({
+    active: isChallengeActive,
+    debugEnabled: isMotionDebugVisible,
+    enabled: isFocused,
+  });
 
   useEffect(() => {
     const loadGoal = async (): Promise<void> => {
@@ -139,18 +110,6 @@ export default function ChallengeScreen() {
     setIsGoalModalVisible(false);
   };
 
-  const handleRefreshSteps = async (): Promise<void> => {
-    const message = await refreshSteps();
-    showToast(message);
-    setRecentSessions(await readChallengeSessionsForRange(challengeHistoryRange));
-    setProgressResetKey((currentKey) => currentKey + 1);
-    setStepReplayKey((currentKey) => currentKey + 1);
-  };
-
-  const showToast = (message: string): void => {
-    setToastMessages((currentMessages) => appendToastMessage(currentMessages, { message }));
-  };
-
   const showSessionToast = (message: string): void => {
     setSessionToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant: 'standard' }));
   };
@@ -163,10 +122,6 @@ export default function ChallengeScreen() {
     }
 
     setServerToastMessages((currentMessages) => appendToastMessage(currentMessages, { message, variant }));
-  };
-
-  const hideToast = (id: number): void => {
-    setToastMessages((currentMessages) => currentMessages.filter((message) => message.id !== id));
   };
 
   const hideSessionToast = (id: number): void => {
@@ -223,107 +178,6 @@ export default function ChallengeScreen() {
     };
   }, [isChallengeActive, isFocused]);
 
-  useEffect(() => {
-    if (!isChallengeActive || !isFocused || isLiveMode) {
-      setAccelerometerAvailable(null);
-      setAccelerometerLog([]);
-      return undefined;
-    }
-
-    let isMounted = true;
-    let subscription: ReturnType<typeof Accelerometer.addListener> | null = null;
-
-    const startAccelerometer = async (): Promise<void> => {
-      try {
-        const available = await Accelerometer.isAvailableAsync();
-        if (!isMounted) {
-          return;
-        }
-
-        setAccelerometerAvailable(available);
-        if (!available) {
-          return;
-        }
-
-        Accelerometer.setUpdateInterval(650);
-        subscription = Accelerometer.addListener(({ x, y, z }) => {
-          const sample = {
-            magnitude: getAccelerationMagnitude(x, y, z),
-            timestamp: new Date().toISOString(),
-            x,
-            y,
-            z,
-          };
-          setAccelerometerLog((currentLog) => [sample, ...currentLog].slice(0, 120));
-        });
-      } catch (error) {
-        console.warn('Unable to read accelerometer data.', error);
-        if (isMounted) {
-          setAccelerometerAvailable(false);
-        }
-      }
-    };
-
-    void startAccelerometer();
-
-    return () => {
-      isMounted = false;
-      subscription?.remove();
-    };
-  }, [isChallengeActive, isFocused, isLiveMode]);
-
-  useEffect(() => {
-    if (!isChallengeActive || !isFocused || isLiveMode) {
-      setGyroscopeAvailable(null);
-      setGyroscopeLog([]);
-      return undefined;
-    }
-
-    let isMounted = true;
-    let gyroscopeSubscription: ReturnType<typeof Gyroscope.addListener> | null = null;
-
-    const startMotionSensors = async (): Promise<void> => {
-      try {
-        const hasGyroscope = await Gyroscope.isAvailableAsync();
-
-        if (!isMounted) {
-          return;
-        }
-
-        setGyroscopeAvailable(hasGyroscope);
-
-        if (hasGyroscope) {
-          Gyroscope.setUpdateInterval(650);
-          gyroscopeSubscription = Gyroscope.addListener(({ x, y, z }) => {
-            const magnitude = getVectorMagnitude(x, y, z);
-            setGyroscopeLog((currentLog) =>
-              [
-                {
-                  headline: `${formatAxis(magnitude)} rad/s`,
-                  line: `x ${formatAxis(x)}  y ${formatAxis(y)}  z ${formatAxis(z)}`,
-                  timestamp: new Date().toISOString(),
-                },
-                ...currentLog,
-              ].slice(0, 120),
-            );
-          });
-        }
-      } catch (error) {
-        console.warn('Unable to read motion sensor data.', error);
-        if (isMounted) {
-          setGyroscopeAvailable(false);
-        }
-      }
-    };
-
-    void startMotionSensors();
-
-    return () => {
-      isMounted = false;
-      gyroscopeSubscription?.remove();
-    };
-  }, [isChallengeActive, isFocused, isLiveMode]);
-
   useFocusEffect(
     useCallback(() => {
       const loadTodayChallengeSteps = async (): Promise<void> => {
@@ -341,10 +195,10 @@ export default function ChallengeScreen() {
     }, [challengeHistoryRange]),
   );
 
-  const hasReachedGoal = todaySteps >= goal;
+  const hasReachedGoal = todayChallengeSteps + motionCounter.steps >= goal;
   const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
 
-  const currentChallengeDelta = challengeStartSteps !== null ? Math.max(0, todaySteps - challengeStartSteps) : 0;
+  const currentChallengeDelta = isChallengeActive ? motionCounter.steps : 0;
   const currentChallengeGoal = activeChallengeGoal ?? challengeGoal;
   const idleChallengeSteps = todayChallengeSteps;
   const ringSteps = isChallengeActive ? currentChallengeDelta : idleChallengeSteps;
@@ -353,23 +207,8 @@ export default function ChallengeScreen() {
     isChallengeActive && challengeStartAt !== null ? Math.max(0, sessionClock - challengeStartAt) : 0;
   const sessionMinutes = Math.max(1, sessionDurationMs / 60000);
   const sessionPace = isChallengeActive ? Math.round(currentChallengeDelta / sessionMinutes) : 0;
-  const dailyChallengeGoalPercent =
-    dailyChallengeGoal > 0 ? Math.min(100, (idleChallengeSteps / dailyChallengeGoal) * 100) : 0;
-  const rollingAverages = getRollingAverages({
-    accelerometerLog: isLiveMode ? getCalculatedAccelerometerLog(calculatedStepCounter.samples) : accelerometerLog,
-    gyroscopeLog: isLiveMode ? getCalculatedGyroscopeLog(calculatedStepCounter.samples) : gyroscopeLog,
-    nowMs: sessionClock,
-    sensorLog,
-  });
-  const modeHint = isLiveMode
-    ? 'Live mode uses the same calculated detector as Debug: acceleration peaks, rotation filtering, cadence, and confidence.'
-    : 'Health data mode reads the system total. Best for comparing against Google Fit / Health Connect.';
-  const challengeAvatarState = getChallengeAvatarState({
-    detectorDecision: calculatedStepCounter.detectorDecision,
-    isChallengeActive,
-    isLiveMode,
-    status,
-  });
+  const modeHint = 'Live motion counting is active during a challenge, so steps appear as you move.';
+  const challengeAvatarState: AvatarAnimationKey = getAvatarStateForMotion(motionCounter.activity);
 
   return (
     <AppScreen
@@ -390,7 +229,6 @@ export default function ChallengeScreen() {
             }}
             title={goalModalMode === 'daily-challenge' ? 'Daily challenge goal' : 'Session challenge goal'}
           />
-          <ToastStack messages={toastMessages} onHide={hideToast} />
           <ToastStack messages={sessionToastMessages} onHide={hideSessionToast} placement="bottom" />
           <ToastStack messages={serverToastMessages} onHide={hideServerToast} placement="center" />
           <ChallengeRewardOverlay onDone={hideChallengeReward} reward={challengeReward} />
@@ -422,23 +260,11 @@ export default function ChallengeScreen() {
       />
 
       <View style={styles.hero}>
-        <ChallengeSourceTabs
-          disabled={isChallengeActive}
-          onChange={(nextMode) => {
-            setTrackingMode(nextMode);
-            setProgressResetKey((currentKey) => currentKey + 1);
-            setStepReplayKey((currentKey) => currentKey + 1);
-            showToast(`Challenge source changed to ${nextMode === 'live' ? 'Live sensor' : 'Health data'}.`);
-          }}
-          style={styles.modeTabs}
-          value={trackingMode}
-        />
-
         <View style={styles.challengeAvatarPanel}>
           <DashboardAvatar
-            caption={getChallengeAvatarCaption(challengeAvatarState, isChallengeActive, isLiveMode)}
+            caption={getChallengeAvatarCaption(challengeAvatarState, isChallengeActive)}
+            speed={motionCounter.speed}
             state={challengeAvatarState}
-            userId={user?.uid ?? null}
           />
         </View>
 
@@ -502,40 +328,27 @@ export default function ChallengeScreen() {
         ) : null}
 
         <View style={styles.statusRow}>
-          <StatusBadge attention={isChallengeActive} status={status} />
-          {!isAvailable && (
+          <StatusBadge attention={isChallengeActive} status={motionCounter.status} />
+          {!motionCounter.isAvailable && (
             <View style={styles.permissionContainer}>
-              <Text style={styles.unsupported}>
-                {isLiveMode ? 'Accelerometer unavailable on this device' : 'Permissions required for step tracking'}
-              </Text>
-              {!isLiveMode ? (
-                <AnimatedPressable
-                  accessibilityLabel="Request pedometer permissions"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void requestPermissions();
-                  }}
-                  style={({ pressed }) => [styles.permissionButton, pressed ? styles.pressed : null]}
-                >
-                  <Text style={styles.permissionButtonText}>Request Permissions</Text>
-                </AnimatedPressable>
-              ) : null}
+              <Text style={styles.unsupported}>Motion sensors are unavailable on this device.</Text>
             </View>
           )}
         </View>
 
-        {canRefresh && (
-          <AppButton
-            accessibilityLabel={isLiveMode ? 'Refresh sensor step data' : 'Refresh health step data'}
-            busy={isRefreshing}
-            icon="refresh-outline"
-            label={isLiveMode ? 'Refresh live' : 'Refresh health'}
-            onPress={() => {
-              void handleRefreshSteps();
-            }}
-            style={styles.refreshButton}
-          />
-        )}
+        <AnimatedPressable
+          accessibilityLabel={isMotionDebugVisible ? 'Hide motion debug data' : 'Show motion debug data'}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: isMotionDebugVisible }}
+          onPress={() => setIsMotionDebugVisible((isVisible) => !isVisible)}
+          style={[styles.motionDebugToggle, isMotionDebugVisible ? styles.motionDebugToggleActive : null]}
+        >
+          <Text style={styles.motionDebugToggleText}>
+            {isMotionDebugVisible ? 'Hide motion debug' : 'Motion debug'}
+          </Text>
+        </AnimatedPressable>
+
+        {isMotionDebugVisible ? <MotionDebugPanel active={isChallengeActive} debug={motionCounter.debug} /> : null}
 
         {hasReachedGoal ? (
           <View style={styles.goalBanner}>
@@ -552,7 +365,6 @@ export default function ChallengeScreen() {
               if (!isChallengeActive) {
                 setActiveChallengeGoal(challengeGoal);
                 setIsChallengeActive(true);
-                setChallengeStartSteps(todaySteps);
                 const startedAt = Date.now();
                 setChallengeStartAt(startedAt);
                 setSessionClock(startedAt);
@@ -565,9 +377,8 @@ export default function ChallengeScreen() {
               setIsChallengeActive(false);
               const endAt = Date.now();
               const startAt = challengeStartAt ?? endAt;
-              const startSteps = challengeStartSteps ?? todaySteps;
               const sessionChallengeGoal = activeChallengeGoal ?? challengeGoal;
-              const delta = Math.max(0, todaySteps - startSteps);
+              const delta = motionCounter.steps;
 
               if (delta > 0) {
                 const today = getTodayString();
@@ -578,7 +389,7 @@ export default function ChallengeScreen() {
                     challengeGoal: sessionChallengeGoal,
                     steps: delta,
                     durationMs: endAt - startAt,
-                    source,
+                    source: 'live-sensor' as const,
                   };
                   await saveChallengeSession(today, session);
                   setTodayChallengeSteps((currentSteps) => currentSteps + delta);
@@ -592,7 +403,7 @@ export default function ChallengeScreen() {
                     const result = await syncChallengeSession({
                       date: today,
                       session,
-                      source,
+                      source: 'live-sensor',
                       userId: user.uid,
                     });
                     if (!result.ok) {
@@ -614,7 +425,6 @@ export default function ChallengeScreen() {
                 showSessionToast('No session steps added');
               }
 
-              setChallengeStartSteps(null);
               setChallengeStartAt(null);
               setActiveChallengeGoal(null);
               setProgressResetKey((currentKey) => currentKey + 1);
@@ -632,18 +442,16 @@ export default function ChallengeScreen() {
         </View>
       </View>
 
-      <MovementInsightPanel
-        currentChallengeDelta={currentChallengeDelta}
-        currentChallengeGoal={currentChallengeGoal}
-        dailyChallengeGoal={dailyChallengeGoal}
-        dailyChallengeGoalPercent={dailyChallengeGoalPercent}
-        debugMessage={debugMessage}
-        isChallengeActive={isChallengeActive}
-        rollingAverages={rollingAverages}
-        sessionDurationMs={sessionDurationMs}
-        sessionPace={sessionPace}
-        source={source}
-      />
+      <View style={styles.historyMetrics}>
+        <MetricCard label="Session" style={styles.historyMetricCard} value={currentChallengeDelta.toLocaleString()} />
+        <MetricCard label="Pace" style={styles.historyMetricCard} value={`${sessionPace.toLocaleString()}/min`} />
+        <MetricCard label="Duration" style={styles.historyMetricCard} value={formatDuration(sessionDurationMs)} />
+        <MetricCard
+          label="Source"
+          style={styles.historyMetricCard}
+          value={motionCounter.isAvailable ? 'Motion' : '-'}
+        />
+      </View>
 
       <ChallengeHistoryPanel
         challengeGoal={challengeGoal}
@@ -679,86 +487,20 @@ const readChallengeSessionsForRange = async (
   return readAllChallengeSessions();
 };
 
-const getCalculatedWalkingStatus = (decision: string, elapsedMsSinceStep: number | null): WalkingStatus => {
-  if (decision === 'accepted') {
-    return 'walking';
+const getChallengeAvatarCaption = (state: AvatarAnimationKey, isChallengeActive: boolean): string => {
+  if (state === 'move') {
+    return 'Phone movement detected';
   }
-
-  if (elapsedMsSinceStep !== null && elapsedMsSinceStep < STATUS_STOPPED_DELAY_MS) {
-    return 'walking';
-  }
-
-  if (decision === 'rejected') {
-    return 'stopped';
-  }
-
-  return 'unknown';
-};
-
-const getCalculatedSensorLog = (log: { steps: number; timestamp: string }[]) =>
-  log.map((entry) => ({
-    delta: 1,
-    rawSteps: entry.steps,
-    timestamp: entry.timestamp,
-    totalSteps: entry.steps,
-  }));
-
-const getCalculatedAccelerometerLog = (samples: { motionG: number; timestamp: string }[]): AccelerometerSample[] =>
-  samples.map((sample) => ({
-    magnitude: sample.motionG,
-    timestamp: sample.timestamp,
-    x: sample.motionG,
-    y: 0,
-    z: 0,
-  }));
-
-const getCalculatedGyroscopeLog = (
-  samples: { rotationRadPerSecond: number; timestamp: string }[],
-): GenericSensorSample[] =>
-  samples.map((sample) => ({
-    headline: `${formatAxis(sample.rotationRadPerSecond)} rad/s`,
-    line: `rotation ${formatAxis(sample.rotationRadPerSecond)} rad/s`,
-    timestamp: sample.timestamp,
-  }));
-
-const getChallengeAvatarState = ({
-  detectorDecision,
-  isChallengeActive,
-  isLiveMode,
-  status,
-}: {
-  detectorDecision: string;
-  isChallengeActive: boolean;
-  isLiveMode: boolean;
-  status: WalkingStatus;
-}): AvatarAnimationKey => {
-  if (isLiveMode && detectorDecision === 'accepted') {
-    return 'run';
-  }
-
-  if (status === 'walking') {
-    return isChallengeActive ? 'run' : 'walk';
-  }
-
-  return 'idle';
-};
-
-const getChallengeAvatarCaption = (
-  state: AvatarAnimationKey,
-  isChallengeActive: boolean,
-  isLiveMode: boolean,
-): string => {
-  const sourceLabel = isLiveMode ? 'live sensor' : 'health data';
 
   if (state === 'run') {
-    return isChallengeActive ? `${sourceLabel} challenge sprint` : `${sourceLabel} burst detected`;
+    return isChallengeActive ? 'Running detected' : 'Fast movement detected';
   }
 
   if (state === 'walk') {
-    return `${sourceLabel} walking`;
+    return 'Walking detected';
   }
 
-  return isChallengeActive ? `${sourceLabel} listening` : `${sourceLabel} ready`;
+  return isChallengeActive ? 'Listening for movement' : 'Ready to move';
 };
 
 type DailyChallengeTotal = {

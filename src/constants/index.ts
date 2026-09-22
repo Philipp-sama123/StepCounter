@@ -10,7 +10,6 @@ export const STORAGE_KEYS = {
 
 export const STEP_HISTORY_KEY_PREFIX = 'steps:';
 export const CHALLENGE_SESSION_KEY_PREFIX = 'challenge:';
-export const WANK_SESSION_KEY_PREFIX = 'wank:';
 
 export const HOME_PROGRESS_RING_SIZE = 236;
 export const HOME_PROGRESS_RING_WIDTH = 18;
@@ -84,14 +83,14 @@ export const THEME = {
     tabText: COLORS.text,
   },
   radius: {
-    control: 8,
-    panel: 8,
+    control: 12,
+    panel: 16,
     pill: 999,
   },
   spacing: {
-    sectionGap: 18,
-    screenBottom: 28,
-    screenHorizontal: 24,
-    screenTop: 18,
+    sectionGap: 20,
+    screenBottom: 32,
+    screenHorizontal: 20,
+    screenTop: 20,
   },
 } as const;

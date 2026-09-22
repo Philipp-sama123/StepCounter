@@ -19,8 +19,8 @@ const styles = StyleSheet.create({
   panel: {
     borderRadius: THEME.radius.panel,
     borderWidth: 1,
-    gap: 14,
-    padding: 14,
+    gap: 16,
+    padding: 16,
   },
   default: {
     backgroundColor: COLORS.surface,

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Text } from 'react-native';
 
@@ -8,22 +8,22 @@ import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { GoalModal } from '../../../components/GoalModal';
 import { AppScreen } from '../../../components/layout/AppScreen';
 import { PageHeader } from '../../../components/layout/PageHeader';
-import { ProfileSharingPanel } from '../../../components/profile/ProfileSharingPanel';
 import { ProfileModal } from '../../../components/ProfileModal';
 import { RevealView } from '../../../components/RevealView';
 import { ToastStack } from '../../../components/ToastMessage';
 import { AppButton } from '../../../components/ui/AppButton';
 import { MetricCard } from '../../../components/ui/MetricCard';
 import { SurfacePanel } from '../../../components/ui/SurfacePanel';
-import { WeightTrendChart } from '../../../components/WeightTrendChart';
 import { COLORS, DEFAULT_GOAL } from '../../../constants';
 import { createShareCode, publishSharedProfile, readSharedProfile } from '../../../firebase/shareSync';
 import { getBmi } from '../../../storage/profileStorage';
 import { sanitizeShareCode, saveImportedShareCode, saveOwnShareCode } from '../../../storage/shareStorage';
-import { saveGoal } from '../../../storage/stepStorage';
 import { appendToastMessage } from '../../../utils/toastQueue';
+import { saveGoal } from '../../steps/infrastructure/localStepRepository';
 import { loadProfileSnapshot, mergeWeightEntries, saveProfileSnapshot } from '../application/profileService';
 
+import { ProfileSharingPanel } from './components/ProfileSharingPanel';
+import { WeightTrendChart } from './components/WeightTrendChart';
 import { styles } from './ProfileScreen.styles';
 
 import type { ToastMessageItem } from '../../../components/ToastMessage';
@@ -271,6 +271,13 @@ export default function ProfileScreen() {
             icon="flag-outline"
             label="Daily step goal"
             onPress={() => setIsGoalModalVisible(true)}
+            variant="secondary"
+          />
+          <AppButton
+            accessibilityLabel="Open sensor diagnostics"
+            icon="hardware-chip-outline"
+            label="Sensor diagnostics"
+            onPress={() => router.push('/sensors')}
             variant="secondary"
           />
         </SurfacePanel>

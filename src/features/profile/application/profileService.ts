@@ -12,7 +12,7 @@ import {
   saveWeightEntry,
 } from '../../../storage/profileStorage';
 import { readImportedShareCode, readOwnShareCode } from '../../../storage/shareStorage';
-import { readGoal } from '../../../storage/stepStorage';
+import { readGoal } from '../../steps/infrastructure/localStepRepository';
 
 import type { UserBodyProfile, WeightEntry } from '../domain/models';
 

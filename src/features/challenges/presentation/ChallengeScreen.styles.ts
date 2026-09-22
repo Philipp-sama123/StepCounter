@@ -84,6 +84,86 @@ export const styles = StyleSheet.create({
   statusRow: {
     marginBottom: 16,
   },
+  motionDebugToggle: {
+    backgroundColor: COLORS.button,
+    borderColor: COLORS.buttonBorder,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  motionDebugToggleActive: {
+    backgroundColor: COLORS.challengeSoft,
+    borderColor: COLORS.challenge,
+  },
+  motionDebugToggleText: {
+    color: COLORS.text,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  motionDebugPanel: {
+    alignSelf: 'stretch',
+    gap: 12,
+    marginBottom: 4,
+  },
+  motionDebugHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  motionDebugTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  motionDebugSubtitle: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  motionDebugDecision: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  motionDebugAccepted: {
+    color: COLORS.success,
+  },
+  motionDebugGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  motionDebugValue: {
+    backgroundColor: COLORS.background,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    flexGrow: 1,
+    minWidth: '45%',
+    padding: 9,
+  },
+  motionDebugValueLabel: {
+    color: COLORS.mutedText,
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  motionDebugValueText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  motionDebugHint: {
+    color: COLORS.mutedText,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+  },
   unsupported: {
     color: COLORS.stopped,
     fontSize: 14,

@@ -37,23 +37,24 @@ const RootNavigator = () => {
         tabBarActiveTintColor: THEME.color.tabActive,
         tabBarInactiveTintColor: THEME.color.tabInactive,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '900',
         },
         tabBarStyle: {
           backgroundColor: THEME.color.tabBackground,
-          borderTopColor: THEME.color.tabBackground,
-          minHeight: 64,
-          paddingBottom: 8,
-          paddingTop: 6,
+          borderTopColor: COLORS.border,
+          borderTopWidth: 1,
+          minHeight: 70,
+          paddingBottom: 10,
+          paddingTop: 8,
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="analytics-outline" size={size} />,
+          title: 'Today',
+          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="footsteps-outline" size={size} />,
         }}
       />
       <Tabs.Screen
@@ -64,16 +65,8 @@ const RootNavigator = () => {
         }}
       />
       <Tabs.Screen
-        name="wank"
-        options={{
-          title: 'Wank',
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="pulse-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
         name="history"
         options={{
-          href: null,
           title: 'History',
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="calendar-outline" size={size} />,
         }}
@@ -81,31 +74,8 @@ const RootNavigator = () => {
       <Tabs.Screen
         name="shared"
         options={{
-          title: 'Shared',
+          title: 'Friends',
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="people-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="debug"
-        options={{
-          title: 'Debug',
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="bug-outline" size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="avatar-live"
-        options={{
-          href: null,
-          tabBarStyle: { display: 'none' },
-          title: 'Live avatar',
-        }}
-      />
-      <Tabs.Screen
-        name="challenge-history"
-        options={{
-          title: 'Sessions',
-          href: null,
-          tabBarIcon: ({ color, size }) => <Ionicons color={color} name="list-outline" size={size} />,
         }}
       />
       <Tabs.Screen
@@ -115,6 +85,7 @@ const RootNavigator = () => {
           tabBarIcon: ({ color, size }) => <Ionicons color={color} name="person-circle-outline" size={size} />,
         }}
       />
+      <Tabs.Screen name="sensors" options={{ href: null }} />
     </Tabs>
   );
 };

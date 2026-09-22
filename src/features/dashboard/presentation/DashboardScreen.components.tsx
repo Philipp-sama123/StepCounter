@@ -7,8 +7,8 @@ import { AnimatedPressable } from '../../../components/AnimatedPressable';
 import { MetricCard } from '../../../components/ui/MetricCard';
 import { COLORS } from '../../../constants';
 import { addLocalDays, parseLocalDate } from '../../../shared/date/localDate';
-import { getTodayString } from '../../../storage/stepStorage';
 import { estimateWalkingCalories } from '../../../utils/calories';
+import { getTodayString } from '../../steps/infrastructure/localStepRepository';
 
 import { styles } from './DashboardScreen.styles';
 

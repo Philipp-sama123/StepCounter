@@ -196,7 +196,7 @@ export default function ChallengeScreen() {
   );
 
   const hasReachedGoal = todayChallengeSteps + motionCounter.steps >= goal;
-  const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'there';
+  const displayName = user?.displayName ?? user?.email?.split('@')[0] ?? 'Walker';
 
   const currentChallengeDelta = isChallengeActive ? motionCounter.steps : 0;
   const currentChallengeGoal = activeChallengeGoal ?? challengeGoal;

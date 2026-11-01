@@ -231,39 +231,38 @@ export const ProgressRing = ({
     animatedOverflowProgress.setValue(0);
     setDisplayRatio(0);
 
-    Animated.sequence([
+    const baseAnimation = Animated.sequence([
       Animated.delay(80),
       Animated.timing(animatedProgress, {
         duration: 660,
         toValue: targetProgress,
         useNativeDriver: false,
       }),
-    ]).start(({ finished }) => {
-      if (!finished) {
-        return;
-      }
+    ]);
+    const overflowAnimation = Animated.sequence([
+      Animated.delay(targetOverflowProgress > 0 ? 110 : 0),
+      Animated.timing(animatedOverflowProgress, {
+        duration: targetOverflowProgress > 0 ? 520 : 1,
+        toValue: targetOverflowProgress,
+        useNativeDriver: false,
+      }),
+    ]);
+    baseAnimation.start(({ finished }) => {
+      if (!finished) return;
+      if (steps >= goal && goal > 0) playFullFeedback();
 
-      if (steps >= goal && goal > 0) {
-        playFullFeedback();
-      }
-
-      Animated.sequence([
-        Animated.delay(targetOverflowProgress > 0 ? 110 : 0),
-        Animated.timing(animatedOverflowProgress, {
-          duration: targetOverflowProgress > 0 ? 520 : 1,
-          toValue: targetOverflowProgress,
-          useNativeDriver: false,
-        }),
-      ]).start(({ finished: overflowFinished }) => {
-        if (overflowFinished && targetOverflowProgress > 0) {
-          playOverflowFeedback();
-        }
+      overflowAnimation.start(({ finished: overflowFinished }) => {
+        if (!overflowFinished) return;
+        if (targetOverflowProgress > 0) playOverflowFeedback();
         setDisplayRatio(targetRatio);
       });
     });
-
     playGainAnimation(200);
     previousSteps.current = steps;
+    return () => {
+      baseAnimation.stop();
+      overflowAnimation.stop();
+    };
   }, [
     animatedOverflowProgress,
     animatedProgress,

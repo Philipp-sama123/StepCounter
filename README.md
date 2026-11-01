@@ -1,72 +1,42 @@
 # StepCounter
 
-```text
- /\_/\          /\_____/\
-( o.o )        /  o   o  \
- > ^ <        ( ==  ^  == )
-               )         (
-              (           )
-              ( (  ) (  ) )
-             (__(__)_(__)__)
+A React Native walking tracker built with Expo and TypeScript. During a walking challenge, the phone’s motion sensors drive a live step counter and an animated skater. The daily dashboard brings those short sessions into context with a step goal and a browsable activity history.
+
+|                                Today                                |                               Walking challenge                                |                              History                               |
+| :-----------------------------------------------------------------: | :----------------------------------------------------------------------------: | :----------------------------------------------------------------: |
+| ![Daily step count and goal progress](assets/screenshots/today.png) | ![Skater at rest before a walking challenge](assets/screenshots/challenge.png) | ![Weekly step trend and goal days](assets/screenshots/history.png) |
+
+Mobile-sized captures from the web build with sample activity stored locally.
+
+## Inside the app
+
+- **Live motion.** The challenge counter processes accelerometer and gyroscope samples as they arrive. Cadence determines whether the skater walks or runs, and the sensor console shows why a sample was accepted or rejected. [Motion counter](src/features/challenges/presentation/useMotionChallengeCounter.ts) · [Sprite animation](src/components/avatar/DashboardAvatar.tsx)
+- **Interactive history.** Swipe the dashboard ring to revisit a day, switch the history chart between a week and a month, or tap a point for that day’s total. [Dashboard](src/features/dashboard/presentation/DashboardScreen.tsx) · [History](src/features/history/presentation/HistoryScreen.tsx)
+- **Device and cloud data.** The app reads steps from Apple Health or Android Health Connect on supported devices, keeps activity under user-scoped storage keys, and syncs with Firestore. [Architecture and sync policy](ARCHITECTURE.md)
+
+## Run locally
+
+Use Node.js 22 and install the locked dependencies.
+
+```sh
+npm ci
 ```
 
-StepCounter is a small walking app for making everyday movement feel a bit more alive. It is not trying to be a giant fitness platform. It shows your steps, lets you run focused walking challenges, and keeps the useful history close enough that you actually want to look at it.
+Copy `.env.example` to `.env` and fill in the six Firebase client configuration values. In your Firebase project, enable Email/Password authentication, create a Firestore database, and deploy the included access rules.
 
-The dashboard is the everyday view: today’s steps, progress, health-data source, refresh, and Firestore sync. Challenge mode is for intentional walks. It has its own saved challenge goal, a green progress ring, pace, duration, challenge goal percentage, and a live sensor console with the last ten readings.
-
-History is intentionally one place. You can switch between daily totals and challenge sessions, with graphs that animate in instead of just appearing flat on the screen. Profile holds account actions, the daily step goal, height, weight tracking, BMI, and timestamped weight entries. Weight and BMI graphs reveal across the chart and bring entries in point by point.
-
-## What Is In The App
-
-- Email login, registration, logout, and persisted auth.
-- Dashboard for today’s steps, source details, refresh, and Firestore save.
-- Challenge sessions with a separate saved challenge goal.
-- Green challenge progress ring based on challenge steps, not daily total.
-- Live sensor log for the last 10 readings during challenge mode.
-- Unified history screen for totals, pace, and session history.
-- Profile page for daily goal, body profile, BMI, and weight tracking.
-- Timestamped weight entries with animated weight and BMI graphs.
-- Firestore sync for daily steps, challenge sessions, profile data, and weight history.
-- Health Connect / Google Fit-compatible data on Android, Apple Health where available, plus live sensor fallback.
-
-## Run It
-
-```bash
-npm install
-cp .env.example .env
-npm start
+```sh
+npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
 ```
 
-Add your Firebase values to `.env`. That file is ignored by Git.
+Run `npm run web` to explore the interface in a browser. Register an account on the sign-in screen. For motion tracking and health permissions, use a physical device and a native development build with `npm run android` or `npm run ios` (iOS builds require macOS and Xcode).
 
-For real phone health data, use a native build:
+## Development checks
 
-```bash
-npm run android
-npm run ios
-```
-
-Expo Go is useful for UI checks, but Health Connect / HealthKit need the native app or a dev client.
-
-## Development Checks
-
-Run the complete quality gate before merging:
-
-```bash
+```sh
 npm run check
 npm run format:check
 ```
 
-The project uses strict TypeScript, ESLint with zero warnings, Prettier, and Vitest characterization tests. See [ARCHITECTURE.md](./ARCHITECTURE.md) for module boundaries, data ownership, synchronization policy, and local-storage migration behavior.
+The first command runs the TypeScript compiler, ESLint, and Vitest. The tests cover step reconciliation, cadence, challenge metrics, profile handling, and user storage isolation.
 
-## Firebase
-
-Enable Email/Password auth in Firebase, then deploy the Firestore rules:
-
-```bash
-npx firebase-tools deploy --only firestore:rules --project YOUR_FIREBASE_PROJECT_ID
-```
-
-## License
-
-MIT
+[MIT license](LICENSE)
